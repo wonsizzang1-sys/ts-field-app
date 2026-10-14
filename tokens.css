@@ -1,0 +1,108 @@
+/*
+  TS 보안컨설팅(신) 디자인 토큰 — 정본
+  근거: 2026-10-13_새개발_설계서.md 4-17-1(색 토큰), 4-17-2(캐주얼·깔끔), D53·D55·D56·D57·D74
+  주인: Claude (contracts\ 폴더 주인은 Codex이나 이 파일만 Claude, 설계서 9-4)
+  쓰는 곳: 사무실 웹(새개발\web), 임원 대시보드, 현장 앱(새개발\field)
+  버전: tokens/1.0 (2026-10-14) — 값을 바꾸면 이 줄의 버전을 올리고 공용 로그에 남긴다.
+*/
+:root {
+  /* ── 정본 색 (4-17-1) ── */
+  --blue: #1E5EFF;        /* 주 버튼, 현재 탭, 확정 표지, 기획 agent */
+  --blue-ink: #1747C7;    /* 눌림, 제목 강조 */
+  --blue-soft: #EDF3FF;   /* 선택 줄, 정보 띠 */
+  --navy: #0D2245;        /* 왼쪽 메뉴 바탕 */
+  --ink: #172B49;         /* 본문 글자 */
+  --muted: #61758F;       /* 보조 글자 */
+  --line: #E1E8F2;        /* 선 */
+  --bg: #F4F7FB;          /* 화면 바탕 */
+  --card: #FFFFFF;        /* 카드 바탕 */
+  --sky: #5AA0FF;         /* 분석 agent, agent 초안 테두리 */
+  --mint: #22A06B;        /* 개선 agent, 양호·좋아짐·통과 */
+  --amber: #F2A900;       /* 보고 agent, 주의·확인 필요·조언 */
+  --coral: #E5484D;       /* 검수 agent, 지연·충돌·멈춤·실패 */
+  --grey-bar: #C9D2E3;    /* 대시보드 1차 막대 */
+
+  /* 상태색 별칭(현장 앱 코드 호환용, 값은 정본과 같음) */
+  --ok: var(--mint);
+  --warn: var(--amber);
+  --bad: var(--coral);
+
+  /* ── 파생 색(정본 색에서 만든 옅은 바탕·진한 글자) ── */
+  --sky-soft: #EAF3FF;
+  --mint-soft: #E6F6EE;
+  --amber-soft: #FFF6DC;
+  --amber-ink: #8A6100;   /* 앰버 바탕 위 글자(대비 확보) */
+  --coral-soft: #FDECEC;
+  --coral-ink: #B42328;
+  --mint-ink: #157A50;
+  --navy-2: #16305C;      /* 메뉴 선택 줄 */
+  --navy-text: #C9D5EE;   /* 메뉴 글자 */
+  --hover: #F7F9FD;
+
+  /* ── 등급 색(1 코랄 → 2·3 앰버 → 4 하늘 → 5 민트, 숫자와 뜻을 항상 함께 쓴다 D74) ── */
+  --grade-1: var(--coral);  --grade-1-bg: var(--coral-soft);  --grade-1-ink: var(--coral-ink);
+  --grade-2: var(--amber);  --grade-2-bg: var(--amber-soft);  --grade-2-ink: var(--amber-ink);
+  --grade-3: var(--amber);  --grade-3-bg: #FFF9EA;            --grade-3-ink: var(--amber-ink);
+  --grade-4: var(--sky);    --grade-4-bg: var(--sky-soft);    --grade-4-ink: #1D5FC4;
+  --grade-5: var(--mint);   --grade-5-bg: var(--mint-soft);   --grade-5-ink: var(--mint-ink);
+  --grade-na: var(--muted); --grade-na-bg: #EEF1F6;
+
+  /* ── agent 역할 색(D57, 3-2) ── */
+  --agent-planner: var(--blue);
+  --agent-analyst: var(--sky);
+  --agent-improver: var(--mint);
+  --agent-reporter: var(--amber);
+  --agent-reviewer: var(--coral);
+
+  /* ── 글자(4-17-2: 본문 15px, 표 14px, 제목 20~24px). 외부 글꼴 파일을 받지 않는다(사내망 오프라인) ── */
+  --font: 'Pretendard', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  --font-num: 'Pretendard', 'Malgun Gothic', 'Segoe UI', sans-serif;
+  --fs-body: 15px;
+  --fs-table: 14px;
+  --fs-small: 13px;
+  --fs-tiny: 12px;
+  --fs-h3: 17px;
+  --fs-h2: 20px;
+  --fs-h1: 24px;
+  --fs-kpi: 28px;
+  --lh: 1.55;
+
+  /* ── 모양(둥근 카드 12px, 여백 16~20px, 아주 옅은 그림자 한 단계) ── */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --gap: 16px;
+  --gap-lg: 20px;
+  --shadow: 0 1px 2px rgba(23, 43, 73, .05), 0 2px 8px rgba(23, 43, 73, .04);
+  --shadow-hover: 0 10px 24px rgba(30, 94, 255, .12);
+  --shadow-pop: 0 18px 48px rgba(13, 34, 69, .22);
+  --focus: 0 0 0 3px rgba(30, 94, 255, .28);
+
+  /* ── 배치(4-3-1, 4-6-1) ── */
+  --topbar-h: 56px;
+  --nav-w: 220px;
+  --nav-w-folded: 64px;
+  --panel-w: 360px;
+  --panel-w-mid: 320px;
+  --btn-h: 40px;
+
+  /* ── 움직임(펼치기·접기 200ms, D72 짧은 반복) ── */
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --t-fast: 160ms;
+  --t-fold: 200ms;
+  --t-rise: 480ms;
+}
+
+/* 현장 앱만 야간점검용 다크 모드를 쓴다(4-17-1). 사무실 웹·대시보드는 다크 모드 없음. */
+@media (prefers-color-scheme: dark) {
+  :root[data-app="field"] {
+    --bg: #0F1522;
+    --card: #182133;
+    --ink: #E8ECF4;
+    --muted: #9AA8BF;
+    --line: #26324A;
+    --blue-soft: #1B2A4A;
+    --hover: #1D2840;
+  }
+}

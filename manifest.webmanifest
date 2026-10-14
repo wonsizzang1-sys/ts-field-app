@@ -1,0 +1,16 @@
+{
+  "name": "TS현장",
+  "short_name": "TS현장",
+  "description": "TS 보안컨설팅 현장 기록 앱(인터넷 없이 동작, 고객 정보 없음)",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4F7FB",
+  "theme_color": "#1E5EFF",
+  "icons": [
+    { "src": "assets/app_icon_192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/app_icon_512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
