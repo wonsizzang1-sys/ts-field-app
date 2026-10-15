@@ -1,0 +1,155 @@
+/*
+  TS 현장 앱 — 디자인 시스템 A(D88·D90④) 덮어쓰기. index.html 에서 tokens.css·app.css 다음에 읽는다(build_single.py 가 함께 묶음).
+  근거: docs\양식\보고서양식_설계.md 4-B, reports\design\theme.py THEME_A, web\core\theme-a.css 와 같은 값.
+  - tokens.css(정본 사본)는 고치지 않는다. 남색 글자 · 파랑 주 버튼 · 빨강 핵심 취약, 초록·주황 없음.
+  - 등급: 1 빨강 · 2 옅은 빨강 · 3 회색 · 4 중간 파랑 · 5 파랑(숫자와 뜻 글자를 함께).
+  - 야간점검 다크 모드: 같은 뜻의 어두운 값(아래 @media). 글자 크게(html[data-big])·움직임 줄이기는 app.css 규칙을 그대로 쓴다.
+*/
+:root {
+  --blue: #0033A0;
+  --blue-ink: #002A85;
+  --blue-soft: #E9EEF8;
+  --blue-text: #0033A0;   /* 글자로 쓰는 파랑(다크에서 밝아짐) */
+  --navy: #0D2245;
+  --ink: #0D2245;
+  --muted: #5B6478;
+  --line: #D5DCE6;
+  --bg: #F4F6F9;
+  --card: #FFFFFF;
+  --sky: #4F75C2;
+  --mint: #0033A0;
+  --amber: #8A93A6;
+  --coral: #C6283D;
+  --grey-bar: #B9C0CC;
+  --sky-soft: #E9EEF8;
+  --mint-soft: #E9EEF8;
+  --amber-soft: #EEF0F3;
+  --amber-ink: #3F4A63;
+  --coral-soft: #FBEBED;
+  --coral-ink: #B01E31;
+  --mint-ink: #0033A0;
+  --hover: #F4F7FC;
+  --red: #C6283D;
+  --na-soft: #EEF0F3;
+
+  --grade-1: #C6283D; --grade-1-bg: #FBEBED; --grade-1-ink: #B01E31;
+  --grade-2: #DA5A68; --grade-2-bg: #FDF3F4; --grade-2-ink: #B01E31;
+  --grade-3: #B9C0CC; --grade-3-bg: #EEF0F3; --grade-3-ink: #26365A;
+  --grade-4: #4F75C2; --grade-4-bg: #E9EEF8; --grade-4-ink: #0033A0;
+  --grade-5: #0033A0; --grade-5-bg: #DDE5F5; --grade-5-ink: #0033A0;
+  --grade-na: #5B6478; --grade-na-bg: #EEF0F3;
+
+  --radius: 4px;
+  --radius-sm: 3px;
+  --radius-lg: 6px;
+  --radius-pill: 4px;
+  --shadow: none;
+  --shadow-pop: 0 10px 28px rgba(13, 34, 69, .20);
+  --focus: 0 0 0 3px rgba(0, 51, 160, .32);
+}
+
+/* 야간점검(다크): 같은 뜻, 어두운 바탕 · 밝은 글자. 흰 글자를 얹는 채움 파랑은 #2B5BD7(대비 5.9) */
+@media (prefers-color-scheme: dark) {
+  :root[data-app="field"] {
+    --bg: #0F1522;
+    --card: #182133;
+    --ink: #E8ECF4;
+    --muted: #A3AFC4;
+    --line: #2C3850;
+    --hover: #1D2840;
+    --blue: #2B5BD7;
+    --blue-ink: #2149B8;
+    --blue-soft: #1B2A4A;
+    --blue-text: #9DB8FF;
+    --navy: #0A1020;
+    --sky: #6F92D8;
+    --mint: #2B5BD7;
+    --amber: #8A93A6;
+    --coral: #D1394E;
+    --red: #D1394E;
+    --sky-soft: #1B2A4A;
+    --mint-soft: #1B2A4A;
+    --mint-ink: #9DB8FF;
+    --amber-soft: #262F40;
+    --amber-ink: #D5DAE3;
+    --coral-soft: #3A1C24;
+    --coral-ink: #FFA3AE;
+    --na-soft: #262F40;
+    --grade-1: #D1394E; --grade-1-bg: #3A1C24; --grade-1-ink: #FFA3AE;
+    --grade-2: #DA5A68; --grade-2-bg: #33202A; --grade-2-ink: #FFA3AE;
+    --grade-3: #5B6478; --grade-3-bg: #262F40; --grade-3-ink: #D5DAE3;
+    --grade-4: #4F75C2; --grade-4-bg: #1B2A4A; --grade-4-ink: #9DB8FF;
+    --grade-5: #2B5BD7; --grade-5-bg: #1E3060; --grade-5-ink: #BFD0FF;
+    --grade-na: #A3AFC4; --grade-na-bg: #262F40;
+    --focus: 0 0 0 3px rgba(157, 184, 255, .40);
+  }
+}
+
+/* ── 틀: 흰 머리 + 파란 밑줄·빨간 끝 표시(보고서와 같은 표시) ── */
+.top { border-bottom: 2px solid var(--blue); }
+.top::after { content: ""; position: absolute; right: 0; bottom: -2px; width: 40px; height: 2px; background: var(--red); pointer-events: none; }
+.top .home b { color: var(--ink); }
+.top .home img { border-radius: 6px; }
+.gear { border-radius: var(--radius); color: var(--blue-text); }
+.tabs { border-top: 1px solid var(--line); }
+.tabs button { border-radius: var(--radius); }
+.tabs button.on { color: var(--blue-text); background: var(--blue-soft); box-shadow: inset 0 3px 0 var(--blue); }
+.tabs .shoot { box-shadow: 0 4px 12px rgba(13, 34, 69, .25); }
+.saved { background: var(--blue); }
+
+/* ── 부품: 평평한 카드 · 각진 꼬리표 ── */
+.card { box-shadow: none; }
+.card h2 { color: var(--ink); }
+.btn { border-radius: var(--radius); }
+.btn.ghost { color: var(--blue-text); }
+.btn.danger { background: var(--red); }
+.chip { border-radius: var(--radius); }
+.tag { border-radius: 3px; }
+.t-blue { color: var(--blue-text); }
+.t-mint { color: var(--mint-ink); }
+.t-grey { background: var(--na-soft); }
+.band { border-radius: var(--radius); border-left: 3px solid transparent; }
+.band.blue { color: var(--blue-text); border-left-color: var(--blue); }
+.band.coral { border-left-color: var(--red); }
+.band.amber { border-left-color: var(--amber); }
+input[type=text], input[type=password], input[type=number], select, textarea { border-radius: var(--radius); }
+.bar, .bar i, .prog, .prog i { border-radius: 1px; }
+.say .bub { border-radius: 6px 6px 6px 2px; }
+.st { border-radius: 3px; }
+.steps li::before { border-radius: 3px; }
+.kpi { border-radius: var(--radius); }
+.kpi b { color: var(--blue-text); }
+.kpi.warn b { color: var(--coral-ink); }
+
+/* S2·S3·S4·S6·S7 */
+.pl { border-radius: var(--radius); }
+.pl.on { border-color: var(--blue); box-shadow: inset 3px 0 0 var(--blue); }
+.pl .ord { color: var(--blue-text); }
+.pl .own { border-radius: 50%; }
+.qc { border-radius: var(--radius); }
+.qc.on { border-color: var(--blue); }
+.g { border-radius: 3px; }
+.qtop { border-radius: var(--radius); }
+.qtop details summary, .guide details summary { color: var(--blue-text); }
+.tool { border-radius: var(--radius); color: var(--blue-text); border: 1px solid var(--line); background: var(--card); }
+.tool.rec { background: var(--red); color: #fff; border-color: var(--red); }
+.ev, .rec, .mode label, .gchk { border-radius: var(--radius); }
+.ev .th, .rec .th { color: var(--blue-text); }
+.gchk em { color: var(--blue-text); border-radius: 3px; }
+.gcase.ok { border-left-color: var(--blue); }
+.gdrift { border-radius: var(--radius); }
+/* 등급 단추: 1·2 빨강 계열, 3 회색(남색 글자), 4·5 파랑 계열. 숫자 20px 굵게 = 큰 글자 대비 기준(3:1) 충족 */
+.gb i { border-width: 1.5px; }
+.gb.on.k3 i { color: var(--grade-3-ink); }
+.gb.on.na i { color: #fff; }
+.toast { border-radius: var(--radius); }
+.sheet { border-radius: 8px 8px 0 0; }
+.memband { border-radius: var(--radius); }
+
+@media (prefers-color-scheme: dark) { :root[data-app="field"] .gb.on.k3 i { color: #fff; } }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(0, 51, 160, .45); } 100% { box-shadow: 0 0 0 10px rgba(0, 51, 160, 0); } }
+@media (min-width: 1024px) {
+  .tabs { border-radius: 6px 6px 0 0; }
+  .fab { box-shadow: 0 4px 12px rgba(13, 34, 69, .25); }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
