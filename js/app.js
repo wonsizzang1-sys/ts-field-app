@@ -421,7 +421,9 @@
       if (!validAppData(d)) throw new Error('format');
       await openWithData(d, true);
     } catch (e) {
-      toast('이 파일은 현장 앱 프로젝트 자료(.tspack)가 아닙니다. 사내에서 받은 파일인지 확인해 주세요.', { img: IMG.warning, ms: 5000 });
+      const nm = (file && file.name) || '';
+      const why = e && e.message === 'format' ? '' : ' (' + ((e && e.message) || '읽기 실패') + ')';
+      toast('「' + nm + '」은(는) 불러올 수 없습니다. 사내에서 받은 프로젝트 자료(.tspack)인지 확인해 주세요.' + why, { img: IMG.warning, ms: 7000 });
     }
   }
   async function refreshFree() {
