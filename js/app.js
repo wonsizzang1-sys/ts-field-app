@@ -39,9 +39,14 @@
     entries: new Map(), marks: new Map(), media: new Map(), sends: [],
     view: 'boot', prevView: null, place: null, seq: null, outView: false, s3f: 'all', s6f: 'time', pick: new Set(), mine: false,
     free: null, lastLayout: null, locked: false, idleAt: Date.now(), building: null, built: null, heicWarned: false,
+    gOpen: {}, // 현장 가이드 접는 칸 열림(등급 기준·사례·물어볼 것·받을 서류)
     memAck: false, // 메모리 저장소일 때 이번 세션에 「연습으로만 쓰기」를 골랐는지(세션마다 다시 묻는다)
   };
   const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem('tsf_' + k); localStorage.setItem('tsf_' + k, v); } catch (e) { return null; } return null; };
+  /* 글자 크게(사용자 결정 10/15): 이 기기에 기억, html[data-big] → app.css 에서 화면 전체 확대 */
+  const bigText = (on) => { if (on !== undefined) pref('big', on ? '1' : ''); document.documentElement.toggleAttribute('data-big', pref('big') === '1'); };
+  bigText();
+  const bigCard = (i) => `<div class="card rise" style="--i:${i}"><div class="toggle"><b>글자 크게 <small class="muted">글자·버튼을 크게 보입니다</small></b><button class="switch ${pref('big') === '1' ? 'on' : ''}" data-act="bigText" aria-label="글자 크게" aria-pressed="${pref('big') === '1'}"></button></div></div>`;
 
   /* ── 앱 자료 ── */
   function validAppData(d) {
@@ -94,7 +99,19 @@
   const outAt = (place) => live().filter((e) => inRound(e) && isOut(e) && e.place === place).sort((a, b) => (a.at < b.at ? -1 : 1));
   const seqLabel = (e) => (isOut(e) ? '문항 외 참고' : e.seq == null ? '미분류' : qOf(e.seq) ? '문항 ' + e.seq : '범위 밖 문항 ' + e.seq);
   const markOf = (seq, by = S.by) => S.marks.get(TSF.markId(S.dev, seq, by, roundId()));
-  const marked = (m) => m && (m.grade != null || m.na || (m.memo || '').trim());
+  const marked = (m) => m && (m.grade != null || m.na || (m.memo || '').trim() || (m.guideChecks || []).length || m.docsSeen);
+  /* 현장 가이드(D80): 앱 자료 guide.items["seq"]. 회사 문항집 평가 종류에만 붙는다 */
+  const guideOf = (seq) => (curEt().bank !== 'custom' && S.ad.guide && S.ad.guide.items && S.ad.guide.items[String(seq)]) || null;
+  /* 제안 등급: 핵심 볼 것 충족(전부·일부·없음) × 서류 확인 → guide.suggest 표. 판단은 컨설턴트가 한다 */
+  function guideSuggest(gd, m) {
+    const keys = (gd.checklist || []).filter((c) => c.key);
+    const on = new Set((m && m.guideChecks) || []);
+    const met = keys.filter((c) => on.has(c.id)).length;
+    const keyMet = met === keys.length ? 'all' : met === 0 ? 'none' : 'some';
+    const docs = !!(m && m.docsSeen);
+    const rule = (gd.suggest || []).find((s) => s.keyMet === keyMet && !!s.docs === docs);
+    return { grade: rule ? +rule.grade : null, met, total: keys.length, docs, touched: !!(m && (Array.isArray(m.guideChecks) || m.docsSeen != null)) };
+  }
   function doneSeqs(pl) {
     const set = new Set();
     for (const s of seqsOf(pl)) if (live().some((e) => inRound(e) && e.seq === s && e.place === pl.id) || [...S.marks.values()].some((m) => m.round === roundId() && m.seq === s && marked(m))) set.add(s);
@@ -511,6 +528,7 @@
     const c1fail = sc && sc.C1 && sc.C1.s === 'fail';
     const samsung = TSF.selfCheck.isSamsung();
     return `${say('analyst', '현장에서는 사진과 메모만 남기셔도 됩니다. 문항은 돌아가서 같이 붙이겠습니다.')}
+      ${bigCard(1)}
       <div class="card rise" style="--i:1"><h2>기기 점검 <small>${sc ? '자동 점검 완료' : '점검 중…'}</small></h2>
         <table class="check">${rows}</table>
         <p class="hint">열기 방식: ${esc(SINGLE ? '파일 하나(A안)' : '설치형(B안)')} · ${esc(location.protocol.replace(':', ''))}</p>
@@ -650,6 +668,7 @@
       ${pg != null || ps || rt ? `<div class="band blue rise" style="--i:1">${ICO.retake.replace('<svg', '<svg width="22" height="22" style="flex:none"')}<div>${rt ? `<b title="${esc(rt.id)}">${esc(refLabel(rt.id))}</b>${retakeDone(rt) ? ' · 찍음' : ' · 이 화면에서 찍으면 요청에 연결됩니다'}<br>` : ''}${where ? `촬영 위치: ${esc(where)}<br>` : ''}${pg != null ? `직전 차수 등급 ${esc(gradeText(pg))}` : ''}${ps ? ` · ${esc(ps)}` : ''}</div></div>` : ''}
       <div class="rise" style="--i:2">${toolsHtml()}</div>
       <div class="card rise" style="--i:3"><h2>이번 기록 <small>${list.length}건</small></h2>${list.length ? `<div class="evs">${list.map(evHtml).join('')}</div>` : '<p class="muted small" style="margin:0">아직 기록이 없습니다. 사진·동영상·음성·메모 중 편한 것으로 남겨 주세요.</p>'}</div>
+      ${guideHtml(S.seq, m)}
       <div class="card rise" style="--i:4"><h2>현장 등급 <small>${m && (m.grade != null || m.na) ? '판단 기록(확정은 사내에서)' : '등급은 나중에 agent가 제안합니다'}</small></h2>
         <div class="grades">${[1, 2, 3, 4, 5].map((g) => `<button class="gb k${g} ${m && m.grade === g ? 'on' : ''}" data-act="grade" data-g="${g}"><i>${g}</i>${GRADE_WORD[g]}</button>`).join('')}
           <button class="gb na ${m && m.na ? 'on' : ''}" data-act="naSheet"><i>해당없음</i>${m && m.na ? '사유: ' + esc(m.naReason.slice(0, 20)) : '사유 필수'}</button></div>
@@ -661,6 +680,54 @@
         <p class="hint">음성은 메모·문항 메모 칸에서 키보드 마이크(받아쓰기)로 남깁니다. 고객 실명·연락처는 말하지 말아 주세요.</p>
       </div>
       <div class="navq"><button class="btn line" data-act="stepQ" data-d="-1" ${idx <= 0 ? 'disabled' : ''}>이전 문항</button><button class="btn" data-act="stepQ" data-d="1" ${idx >= seqs.length - 1 ? 'disabled' : ''}>다음 문항</button></div>`;
+  }
+  /* D85 되돌려 주기: guide.cases(승인 사례, 고객명 없음)·guide.drift(현장 등급 ↔ 최종 등급 차이). 앱 자료에 없으면 안 보인다 */
+  const approvedCases = (seq) => ((S.ad.guide && S.ad.guide.cases && S.ad.guide.cases.items) || {})[String(seq)] || [];
+  function driftWarn(seq) {
+    const ds = ((S.ad.guide && S.ad.guide.drift && S.ad.guide.drift.items) || {})[String(seq)] || [];
+    if (!ds.length) return '';
+    const down = ds.filter((d) => +d.finalGrade < +d.fieldGrade).length, d0 = ds[0];
+    const how = down * 2 >= ds.length ? '현장에서 높게 주고 사무실에서 낮춘' : '현장에서 낮게 주고 사무실에서 높인';
+    const many = ds.length > 1 ? `경우가 많습니다(${ds.length}건)` : `경우가 있습니다(현장 ${gradeText(+d0.fieldGrade)} → 최종 ${gradeText(+d0.finalGrade)}${d0.finalConfirmed === false ? ', 최종 확정 전' : ''})`;
+    return `이 문항은 ${how} ${many}. ${down * 2 >= ds.length ? '기록 보존을 꼭 확인하세요.' : '근거 서류·운영 기록까지 꼭 확인하세요.'}`;
+  }
+  function photoSheet(i, j) {
+    const c = approvedCases(S.seq)[+i], ph = c && (c.photos || [])[+j];
+    if (!ph) return;
+    const sh = sheet(`<h3>사례 사진</h3><img class="gbig" src="${esc(ph.src)}" alt="${esc(ph.caption || '사례 사진')}">${ph.caption ? `<p class="muted small">${esc(ph.caption)}</p>` : ''}<p class="hint">다른 현장 사례 · 사내 참고용입니다. 고객에게 보이지 않습니다.</p><div class="acts"><button class="btn line" data-x>닫기</button></div>`);
+    sh.querySelector('[data-x]').onclick = closeSheet;
+  }
+  /* 현장 가이드 패널(D80): 볼 것 체크 → 서류 확인 → 제안 등급(한 번 눌러 쓰기). 접는 칸의 열림 상태는 S.gOpen 에 둔다 */
+  function guideHtml(seq, m) {
+    const gd = guideOf(seq);
+    if (!gd) return '';
+    const on = new Set((m && m.guideChecks) || []), sg = guideSuggest(gd, m);
+    const open = (k) => (S.gOpen[k] ? 'open' : '');
+    const draft = gd.status !== 'confirmed' ? `<span class="tag t-grey" title="${esc(gd.needsReview ? '선임 확인 전 · ' + gd.needsReview : '선임 확인 전 초안')}">agent 초안</span>` : '';
+    const sgTxt = sg.grade ? `제안 등급: ${gradeText(sg.grade)} (핵심 ${sg.met}/${sg.total} 충족, 서류 ${sg.docs ? '있음' : '없음'})` : '';
+    const same = m && m.grade === sg.grade && !m.na;
+    const li = (arr) => `<ul class="glist">${arr.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+    const ac = approvedCases(seq), dw = driftWarn(seq);
+    return `<div class="card guide rise" style="--i:3">${dw ? `<p class="gdrift" role="note">${esc(dw)}</p>` : ''}<h2>현장 가이드 ${draft}<small>볼 것 ${on.size}/${(gd.checklist || []).length}</small></h2>
+      <div class="gchks">${(gd.checklist || []).map((c) => `<button class="gchk ${on.has(c.id) ? 'on' : ''}" data-act="gChk" data-id="${esc(c.id)}" aria-pressed="${on.has(c.id)}"><i aria-hidden="true"></i><span>${esc(c.text)}</span>${c.key ? '<em>핵심</em>' : ''}</button>`).join('')}</div>
+      <div class="toggle gdocs"><b>서류 확인함 <small class="muted">절차서·일지 등</small></b><button class="switch ${m && m.docsSeen ? 'on' : ''}" data-act="gDocs" aria-label="서류 확인" aria-pressed="${!!(m && m.docsSeen)}"></button></div>
+      ${sg.touched && sg.grade ? `<div class="gsug"><div class="t"><span class="g g${sg.grade}">${esc(gradeText(sg.grade))}</span><b>${esc(sgTxt)}</b></div>
+        <button class="btn ${same ? 'line' : ''}" data-act="gUse" data-g="${sg.grade}" ${same ? 'disabled' : ''}>${same ? '지금 등급과 같음' : '이 등급 쓰기'}</button>
+        <p class="hint">제안일 뿐입니다. 현장 등급은 컨설턴트가 정합니다.</p></div>` : '<p class="hint">볼 것을 체크하거나 서류 확인을 정하면 제안 등급이 나옵니다.</p>'}
+      <details data-gd="grade" ${open('grade')}><summary>등급 기준 5줄</summary><ul class="glist">${['1', '2', '3', '4', '5', 'NA'].filter((k) => gd.gradeGuide && gd.gradeGuide[k]).map((k) => `<li>${esc(gd.gradeGuide[k])}</li>`).join('')}</ul></details>
+      ${ac.length + (gd.cases || []).length ? `<details data-gd="cases" ${open('cases')}><summary>비슷한 사례 ${ac.length + (gd.cases || []).length}건</summary>
+        ${ac.length ? `<p class="ghead">${esc(S.ad.guide.cases.label || '다른 현장 사례 · 사내 참고용')}</p>${ac.map((c, i) => `<div class="gcase ok"><div><span class="g g${esc(c.grade)}">${esc(gradeText(+c.grade))}</span> <small class="muted">${esc(GRADE_DEF[c.grade] || '')}${c.area ? ' · ' + esc(c.area) : ''}</small></div><p>${esc(c.text)}</p>${c.laterGrade ? `<p class="hint">개선 뒤 ${esc(gradeText(+c.laterGrade))}</p>` : ''}${(c.photos || []).filter((ph) => ph.src).slice(0, 2).map((ph, j) => `<button class="gph" data-act="gPhoto" data-i="${i}" data-j="${j}" aria-label="사진 크게 보기"><img src="${esc(ph.src)}" alt="${esc(ph.caption || '사례 사진')}" loading="lazy"></button>`).join('')}</div>`).join('')}` : ''}
+        ${(gd.cases || []).length ? `${ac.length ? '<p class="ghead">일반 사례(agent 초안)</p>' : ''}${gd.cases.map((c) => `<div class="gcase"><div><span class="g g${esc(c.grade)}">${esc(gradeText(+c.grade))}</span> <b>${esc(c.title)}</b></div><p>${esc(c.situation)}</p>${c.findingSentence ? `<p class="hint">발견사항 문장 예: ${esc(c.findingSentence)}</p>` : ''}</div>`).join('')}` : ''}</details>` : ''}
+      ${(gd.askClient || []).length ? `<details data-gd="ask" ${open('ask')}><summary>물어볼 것 ${gd.askClient.length}개</summary>${li(gd.askClient)}</details>` : ''}
+      ${(gd.requestDocs || []).length ? `<details data-gd="docs" ${open('docs')}><summary>받을 서류 ${gd.requestDocs.length}개</summary>${li(gd.requestDocs)}</details>` : ''}
+    </div>`;
+  }
+  async function guideCheck(id) {
+    const m = markOf(S.seq), on = new Set((m && m.guideChecks) || []);
+    on.has(id) ? on.delete(id) : on.add(id);
+    const order = ((guideOf(S.seq) || {}).checklist || []).map((c) => c.id);
+    await setMark(S.seq, { guideChecks: order.filter((x) => on.has(x)) });
+    render();
   }
   /* 문항 외 참고사항(D79): 사진·메모만 남기고 등급은 받지 않는다 */
   function vOut(pl) {
@@ -806,7 +873,7 @@
     }
     S.sends.forEach((s) => s.parts.forEach((p) => { if (p.blob) { sizes.parts += p.blob.size; if (s.confirmed) purgeable.size += p.blob.size; } }));
     const sc = S.sc || {};
-    return `<div class="card rise" style="--i:0"><h2>기록자</h2><div class="chips">${S.recs.map((i) => `<button class="chip ${S.by === i ? 'on' : ''}" data-act="setBy" data-i="${esc(i)}">${esc(i)}</button>`).join('')}<button class="chip" data-act="addRec">다른 사람 추가</button></div></div>
+    return `${bigCard(0)}<div class="card rise" style="--i:0"><h2>기록자</h2><div class="chips">${S.recs.map((i) => `<button class="chip ${S.by === i ? 'on' : ''}" data-act="setBy" data-i="${esc(i)}">${esc(i)}</button>`).join('')}<button class="chip" data-act="addRec">다른 사람 추가</button></div></div>
       <div class="card rise" style="--i:1"><h2>기기 정보</h2>
         <p style="margin:0">기기 ID <b class="num">${esc(S.dev)}</b></p>
         <label class="field"><span>기기 별명</span><input type="text" data-commit="alias" value="${esc(S.alias)}" placeholder="예: ${esc(S.by || 'KJ')} 갤럭시" maxlength="20"></label>
@@ -1139,6 +1206,7 @@
   /* ── 동작 연결 ── */
   const ACT = {
     home: () => go('s1'),
+    bigText: () => { bigText(pref('big') !== '1'); render(); },
     go: (el) => { if (el.dataset.v === 's7') S.built = null; if (el.dataset.v === 's0') runSelfCheck(); go(el.dataset.v); },
     start: () => go('s1'),
     pickPack: () => { $('#inPack').value = ''; $('#inPack').click(); },
@@ -1170,6 +1238,10 @@
     entrySheet: (el) => entrySheet(el.dataset.id),
     naSheet: (el) => naSheet(el.dataset.seq != null ? +el.dataset.seq : S.seq),
     grade: (el) => setGrade(+el.dataset.g),
+    gChk: (el) => guideCheck(el.dataset.id),
+    gPhoto: (el) => photoSheet(el.dataset.i, el.dataset.j),
+    gDocs: async () => { const m = markOf(S.seq); await setMark(S.seq, { docsSeen: !(m && m.docsSeen) }); render(); },
+    gUse: async (el) => { const g = +el.dataset.g; if (await setMark(S.seq, { grade: g, na: false, naReason: '' })) { render(); toast(`제안 등급 ${gradeText(g)}을 현장 등급으로 썼습니다. 바꾸려면 아래 등급을 누르세요.`, { img: IMG.approve }); } },
     tagMark: async (el) => { const m = markOf(S.seq); const v = ((m ? m.memo : '') + ' ' + el.dataset.t).trim(); await setMark(S.seq, { memo: v }); render(); },
     pickRec: (el) => { const id = el.dataset.id; S.pick.has(id) ? S.pick.delete(id) : S.pick.add(id); render(); },
     pickClear: () => { S.pick.clear(); render(); },
@@ -1235,6 +1307,7 @@
     const cancel = (e2) => { if (e2.type === 'pointermove' && Math.hypot(e2.clientX - x, e2.clientY - y) < 10) return; clearTimeout(longTimer); removeEventListener('pointerup', cancel); removeEventListener('pointermove', cancel); removeEventListener('pointercancel', cancel); };
     addEventListener('pointerup', cancel); addEventListener('pointermove', cancel); addEventListener('pointercancel', cancel);
   });
+  document.addEventListener('toggle', (ev) => { const d = ev.target; if (d && d.dataset && d.dataset.gd) S.gOpen[d.dataset.gd] = d.open; }, true);
   document.addEventListener('contextmenu', (ev) => { if (ev.target.closest('[data-long]')) ev.preventDefault(); });
   document.addEventListener('input', (ev) => { const t = ev.target; if (t.dataset && t.dataset.draft && t.closest('#main')) draftSave(t.dataset.draft, t.value); if (t.id === 'code') t.value = t.value.toUpperCase(); });
   document.addEventListener('change', async (ev) => {
