@@ -22,7 +22,6 @@
     <main id="main"></main>
     <nav class="tabs" id="tabs" hidden></nav>
   </div>
-  <div class="saved" id="saved">저장됨</div>
   <div id="layer"></div>
 
   <!-- 촬영·파일 입력(5-5). 사진·동영상은 카메라를 바로 연다 -->
@@ -31,6 +30,7 @@
   <input type="file" id="inGallery" accept="image/*,video/*" multiple hidden>
   <input type="file" id="inTest" accept="image/*" capture="environment" hidden>
   <input type="file" id="inPack" hidden>
+  <input type="file" id="inBackup" accept=".zip,application/zip" multiple hidden><!-- D95 백업 불러오기 -->
 
   <!-- 앱 자료 ts-field-app-data/1(5-7). B안에서는 비어 있다 -->
   <script type="application/json" id="ts-app-data"></script>

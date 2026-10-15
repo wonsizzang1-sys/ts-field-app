@@ -59,5 +59,29 @@
     return new Blob([...chunks, ...central, e.buffer], { type: 'application/zip' });
   }
 
-  Object.assign(TSF, { crc32, blobCrc, makeZip, zipEntryOverhead: entryOverhead, ZIP_END_SIZE: END_SIZE });
+  /* ZIP 읽기(D95 백업 불러오기). 이 앱이 만든 STORE ZIP 만 읽는다. 반환: [{name, blob}] (blob 은 원본 Blob 의 조각, 복사 없음) */
+  async function readZip(zip) {
+    const tailLen = Math.min(zip.size, 65557);
+    const tail = new DataView(await zip.slice(zip.size - tailLen).arrayBuffer());
+    let e = -1;
+    for (let i = tailLen - END_SIZE; i >= 0; i--) if (tail.getUint32(i, true) === 0x06054b50) { e = i; break; }
+    if (e < 0) throw new Error('ZIP 파일이 아닙니다');
+    const n = tail.getUint16(e + 10, true), cdSize = tail.getUint32(e + 12, true), cdOff = tail.getUint32(e + 16, true);
+    const cd = new DataView(await zip.slice(cdOff, cdOff + cdSize).arrayBuffer());
+    const dec = new TextDecoder(), out = [];
+    for (let i = 0, p = 0; i < n; i++) {
+      if (cd.getUint32(p, true) !== 0x02014b50) throw new Error('ZIP 목록이 손상되었습니다');
+      const method = cd.getUint16(p + 10, true), size = cd.getUint32(p + 20, true);
+      const nl = cd.getUint16(p + 28, true), xl = cd.getUint16(p + 30, true), cl = cd.getUint16(p + 32, true), lo = cd.getUint32(p + 42, true);
+      const name = dec.decode(new Uint8Array(cd.buffer, cd.byteOffset + p + 46, nl));
+      if (method !== 0) throw new Error('압축된 ZIP 은 읽지 않습니다');
+      const lh = new DataView(await zip.slice(lo, lo + 30).arrayBuffer());
+      const start = lo + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+      out.push({ name, blob: zip.slice(start, start + size) });
+      p += 46 + nl + xl + cl;
+    }
+    return out;
+  }
+
+  Object.assign(TSF, { crc32, blobCrc, makeZip, readZip, zipEntryOverhead: entryOverhead, ZIP_END_SIZE: END_SIZE });
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -20,8 +20,6 @@ img { max-width: 100%; }
 .chip-me { min-width: 48px; height: 40px; border-radius: var(--radius-pill); border: 0; padding: 0 12px; font-weight: 800; color: #fff; cursor: pointer; }
 .gear { width: 48px; height: 48px; border: 0; border-radius: 50%; background: var(--blue-soft); color: var(--blue); display: grid; place-items: center; cursor: pointer; }
 .gear svg { width: 24px; height: 24px; }
-.saved { position: fixed; top: 64px; right: 16px; z-index: 40; background: var(--mint); color: #fff; font-size: 13px; font-weight: 800; border-radius: var(--radius-pill); padding: 4px 12px; opacity: 0; transform: translateY(-6px); transition: all .2s var(--ease); pointer-events: none; }
-.saved.on { opacity: 1; transform: none; }
 main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 16px 16px 120px; }
 main.wide { max-width: none; padding: 0; }
 .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: 1fr 1fr 96px 1fr; align-items: end; background: var(--card); border-top: 1px solid var(--line); padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
@@ -259,6 +257,30 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: none;
 .memdlg .acts1 { display: grid; gap: 8px; margin-top: 14px; }
 .memdlg a { word-break: break-all; }
 .btn.big { min-height: 64px; font-size: 18px; }
+/* D95 ① 저장 상태 줄(머리 아래, 늘 보임). 큰 글자 기준: 첫 줄 16px 굵게, 둘째 줄 14px */
+.savebar { flex: 1 0 100%; display: flex; gap: 8px; align-items: center; border-top: 1px solid var(--line); margin: 2px -16px -10px; padding: 6px 16px 8px; background: var(--card); transition: background .4s var(--ease); }
+.savebar .sb-main { flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left; font: inherit; color: var(--ink); cursor: pointer; min-height: 44px; }
+.savebar .sb-main { word-break: keep-all; }
+.savebar .sb-main b { display: block; font-size: 16px; line-height: 1.35; }
+.savebar .sb-main b i { font-style: normal; display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 6px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 14px; vertical-align: -3px; }
+.savebar .sb-main small { display: block; font-size: 14px; color: var(--muted); line-height: 1.35; }
+.savebar .sb-main small.warn { color: var(--coral-ink); font-weight: 700; }
+.savebar .sb-main small.due { color: var(--blue-text); font-weight: 800; }
+.savebar .sb-bk { flex: none; min-height: 52px; padding: 0 14px; font-size: 16px; }
+.savebar.due { background: var(--blue-soft); }
+.savebar.pulse { animation: sbpulse 1s var(--ease); }
+@keyframes sbpulse { 0% { background: var(--blue-soft); } 100% { background: var(--card); } }
+.savebar.due.pulse { animation: none; }
+.part .pbtns { display: grid; gap: 6px; }
+/* D95 ② 설치 안내 */
+.instUrl { display: grid; gap: 4px; background: var(--blue-soft); border-radius: var(--radius); padding: 12px; margin: 12px 0 8px; }
+.instUrl span { font-size: 13px; font-weight: 700; color: var(--muted); }
+.instUrl b { font-size: 17px; word-break: break-all; color: var(--blue-text); }
+.instUrl .btn { justify-self: start; min-height: 44px; }
+details.inst { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin: 8px 0 0; }
+details.inst summary { font-size: 16px; font-weight: 800; cursor: pointer; min-height: 32px; }
+details.inst .steps { margin: 8px 0 0; }
+details.inst .steps li { font-size: 15px; }
 .sentdone { border: 2px solid var(--mint); }
 
 /* 현장 가이드(D80): S4 문항 기록. 큰 누름 칸(48px 이상), 체크는 줄 전체를 누른다 */

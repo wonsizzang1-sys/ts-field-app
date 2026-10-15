@@ -140,5 +140,49 @@
     try { return { total, parts: planParts(media, 300 * 1024, thumbBytes, partBytes).parts }; } catch (e) { return { total, parts: 1 }; }
   }
 
-  Object.assign(TSF, { buildBundle, planParts, receiptOf, estimateBundle: estimate, mediaFileName: mediaName });
+  /* 묶음 조각 읽기(D95 백업 불러오기). 백업 파일과 보내기 조각은 같은 형식이다.
+     files: File/Blob 목록(여러 묶음이 섞여도 된다) → {bundles:[{bundleId, mode, createdAt, device, project, parts, have,
+     records, manifest, media: Map(id → Blob, 조각을 이은 원본), thumbs: Map(id → Blob)}], errors:[파일 이름 · 사유]} */
+  async function readBundles(files) {
+    const by = new Map(), errors = [];
+    const json = async (b) => JSON.parse(await b.text());
+    for (const f of files) {
+      try {
+        const items = await TSF.readZip(f);
+        const get = (n) => items.find((x) => x.name === n);
+        if (!get('part.json')) throw new Error('현장 묶음이 아닙니다');
+        const part = await json(get('part.json').blob);
+        if (part.format !== 'ts-field-bundle/1') throw new Error('현장 묶음이 아닙니다');
+        if (part.enc && part.enc.alg !== 'none') throw new Error('암호화된 묶음은 앱에서 되살릴 수 없습니다');
+        let b = by.get(part.bundleId);
+        if (!b) {
+          b = { bundleId: part.bundleId, mode: part.mode, createdAt: part.createdAt, device: part.device, project: part.project, parts: part.parts, have: new Set(),
+            records: await json(get('records.json').blob), manifest: await json(get('manifest.json').blob), pieces: new Map(), thumbs: new Map() };
+          by.set(part.bundleId, b);
+        }
+        b.have.add(part.part);
+        for (const it of items) {
+          let m = /^thumbs\/(.+)\.jpg$/.exec(it.name);
+          if (m) { b.thumbs.set(m[1], it.blob); continue; }
+          m = /^media\/(FR-[A-Z0-9]+-\d+-m\d+)\.[A-Za-z0-9]+(?:\.c(\d+)of(\d+))?$/.exec(it.name);
+          if (m) { const arr = b.pieces.get(m[1]) || []; arr[(+m[2] || 1) - 1] = it.blob; b.pieces.set(m[1], arr); }
+        }
+      } catch (e) { errors.push(`${(f && f.name) || '파일'} · ${(e && e.message) || e}`); }
+    }
+    const bundles = [...by.values()].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    for (const b of bundles) {
+      b.media = new Map();
+      for (const d of b.manifest.media || []) {
+        const arr = b.pieces.get(d.id), need = (d.chunks || [d.part]).length;
+        if (!arr || arr.filter(Boolean).length !== need) continue; // 조각이 모자라면 건너뛴다
+        const blob = new Blob(arr);
+        if (blob.size === d.size && (await TSF.sha256Hex(blob)) === d.sha256) b.media.set(d.id, blob);
+        else errors.push(`${d.id} · 사진·동영상 파일이 손상되었습니다`);
+      }
+      delete b.pieces;
+    }
+    return { bundles, errors };
+  }
+
+  Object.assign(TSF, { buildBundle, planParts, receiptOf, estimateBundle: estimate, mediaFileName: mediaName, readBundles });
 })(typeof window !== 'undefined' ? window : globalThis);

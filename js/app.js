@@ -40,8 +40,12 @@
     view: 'boot', prevView: null, place: null, seq: null, outView: false, s3f: 'all', s6f: 'time', pick: new Set(), mine: false,
     free: null, lastLayout: null, locked: false, idleAt: Date.now(), building: null, built: null, heicWarned: false,
     gOpen: {}, // 현장 가이드 접는 칸 열림(등급 기준·사례·물어볼 것·받을 서류)
-    memAck: false, // 메모리 저장소일 때 이번 세션에 「연습으로만 쓰기」를 골랐는지(세션마다 다시 묻는다)
+    // D95 기록 보호: 저장 상태 줄·영구 저장 여부·자동 백업(bkCfg = meta.backup, bk = 미리 만든 백업 파일)
+    persisted: null, lastSaveAt: null, bkCfg: { every: 10, at: null, lastId: null, mediaIds: [], n: 0 }, bk: null, bkBusy: false,
   };
+  /* D95 ② 설치 주소: 앱 자료 installUrl(https)이 있으면 그것, 없으면 기본 B안 주소 */
+  const INSTALL_URL = 'https://wonsizzang1-sys.github.io/ts-field-app/';
+  const installUrl = () => (S.ad && /^https:\/\//.test(S.ad.installUrl || '') ? S.ad.installUrl : INSTALL_URL);
   const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem('tsf_' + k); localStorage.setItem('tsf_' + k, v); } catch (e) { return null; } return null; };
   /* 글자 크게(사용자 결정 10/15): 이 기기에 기억, html[data-big] → app.css 에서 화면 전체 확대 */
   const bigText = (on) => { if (on !== undefined) pref('big', on ? '1' : ''); document.documentElement.toggleAttribute('data-big', pref('big') === '1'); };
@@ -131,7 +135,8 @@
     return `<div class="say rise"><img src="${img || IMG[who]}" alt=""><div class="bub"><b>${esc(NAMES[who])}</b>${esc(text)}</div></div>`;
   }
   function gchip(g, na) { return na ? '<span class="g gna">해당없음</span>' : g == null ? '' : `<span class="g g${g}">${esc(gradeText(g))}</span>`; }
-  function flashSaved() { const s = $('#saved'); s.classList.add('on'); clearTimeout(flashSaved.t); flashSaved.t = setTimeout(() => s.classList.remove('on'), 1000); }
+  /* 저장 직후: 상태 줄을 새로 그리고(D95 ①) 백업할 때가 되었으면 백업 파일을 미리 만든다(D95 ③) */
+  function flashSaved() { S.lastSaveAt = isoLocal(); S.pulseAt = Date.now(); updateSaveBar(true); bkSchedule(); }
   function toast(msg, opt = {}) {
     const layer = $('#layer');
     const old = layer.querySelector('.toast'); if (old) old.remove();
@@ -164,33 +169,32 @@
     return `<ol class="steps">${TSF.selfCheck.REOPEN.map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
       ${u ? `<p class="small" style="margin:12px 0 0"><b>설치형(B안) 주소가 있습니다.</b> 이 주소로 열면 기록이 저장됩니다: <a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></p>` : '<p class="hint">설치형(B안) 주소를 받았다면 그 주소로 여는 것이 가장 안전합니다.</p>'}`;
   }
-  /* ③ 메모리 저장소일 때 막는 안내 창: 첫 실행과 이 세션의 첫 기록 전. 바깥을 눌러도 닫히지 않는다 */
-  function memDialog(then) {
+  /* D95 ② 설치 안내(크롬·삼성 인터넷·사파리). 설치형은 기록을 폰 안에 저장하고 영구 저장을 받기 쉽다 */
+  function installHtml() {
+    const u = installUrl();
+    return `<div class="instUrl"><span>설치 주소</span><b>${esc(u)}</b><button class="btn ghost" data-act="copyUrl">주소 복사</button></div>
+      <details class="inst" open><summary>갤럭시 · 크롬</summary><ol class="steps"><li>크롬을 열고 위 주소를 넣습니다</li><li>오른쪽 위 ⋮ 를 누릅니다</li><li>「홈 화면에 추가」 또는 「앱 설치」를 누릅니다</li><li>홈 화면의 TS현장 아이콘으로 엽니다</li></ol></details>
+      <details class="inst"><summary>갤럭시 · 삼성 인터넷</summary><ol class="steps"><li>삼성 인터넷을 열고 위 주소를 넣습니다</li><li>주소창의 「설치」 아이콘(아래 화살표가 든 상자)을 누릅니다</li><li>안 보이면 아래 ≡ → 「현재 페이지 추가」 → 「홈 화면」</li><li>홈 화면의 TS현장 아이콘으로 엽니다</li></ol></details>
+      <details class="inst"><summary>아이폰 · 사파리</summary><ol class="steps"><li>사파리를 열고 위 주소를 넣습니다</li><li>아래쪽 공유 단추(네모에 위 화살표)를 누릅니다</li><li>「홈 화면에 추가」를 누릅니다</li><li>홈 화면의 TS현장 아이콘으로 엽니다</li></ol></details>
+      <p class="hint">설치한 앱에서 메일로 받은 프로젝트 자료(.tspack)를 「프로젝트 불러오기」로 넣으면 시작할 수 있습니다.</p>`;
+  }
+  /* D95 ② 메모리 저장소(IndexedDB 실패·content:// 파일 등): 새 기록은 시작하지 못하게 막고 설치를 안내한다.
+     이미 메모리에 있는 기록은 「지금 바로 보내기·내려받기」만 할 수 있다. 바깥을 눌러도 닫히지 않는다 */
+  function memDialog() {
     if ($('#memDlg')) return;
     closeSheet();
     const el = document.createElement('div');
     el.className = 'scrim'; el.id = 'scrim';
-    el.innerHTML = '<div class="sheet memdlg" id="memDlg" role="alertdialog" aria-modal="true" aria-labelledby="memDlgT"></div>';
+    const has = S.ad && memRisk();
+    el.innerHTML = `<div class="sheet memdlg" id="memDlg" role="alertdialog" aria-modal="true" aria-labelledby="memDlgT">
+      <h3 id="memDlgT">여기서는 기록을 남길 수 없습니다</h3>
+      <p class="lead">이렇게 연 앱은 기록을 폰에 저장하지 못합니다. 닫으면 모두 사라지므로 새 기록은 막았습니다. 아래 주소로 앱을 설치해 주세요.</p>
+      ${has ? `<div class="band coral" style="display:block"><b>보내지 않은 기록 ${unsentN()}건이 이 화면에만 있습니다.</b> 닫기 전에 「지금 바로 보내기」로 메일 보내기나 내려받기를 마쳐 주세요.</div><button class="btn wide big danger" data-m="send">지금 바로 보내기</button>` : ''}
+      ${installHtml()}
+      <details class="inst"><summary>메일로 받은 앱 파일(.html)로 여는 경우</summary>${reopenHtml()}</details>
+      <div class="acts1"><button class="btn line" data-m="close">닫고 둘러보기(기록 안 됨)</button></div></div>`;
     $('#layer').appendChild(el);
-    const sh = el.firstElementChild;
-    const bind = () => sh.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => {
-      const m = b.dataset.m;
-      if (m === 'steps') steps();
-      else if (m === 'back') intro();
-      else { S.memAck = true; el.remove(); render(); toast('연습용으로 엽니다. 남긴 기록은 닫기 전에 「보내기」로 보내 주세요.', { img: IMG.warning, ms: 5000 }); if (then) then(); }
-    }));
-    const intro = () => {
-      sh.innerHTML = `<h3 id="memDlgT">기록이 저장되지 않습니다</h3>
-        <p class="lead">이 열기 방식에서는 기록이 폰에 저장되지 않습니다. 앱을 닫거나 새로 고치면 기록이 모두 사라집니다.</p>
-        <div class="acts1"><button class="btn" data-m="steps">저장되는 방식으로 다시 열기 안내</button><button class="btn line" data-m="practice">연습으로만 쓰기</button></div>`;
-      bind();
-    };
-    const steps = () => {
-      sh.innerHTML = `<h3 id="memDlgT">저장되는 방식으로 다시 열기</h3><p class="muted small" style="margin:0">이 창을 닫고 아래 순서로 다시 여세요.</p>${reopenHtml()}
-        <div class="acts1"><button class="btn line" data-m="back">돌아가기</button><button class="btn line" data-m="practice">연습으로만 쓰기</button></div>`;
-      bind();
-    };
-    intro();
+    el.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => { el.remove(); if (b.dataset.m === 'send') { S.built = null; go('s7'); } }));
   }
   const urlCache = new Map();
   function thumbUrl(mid) {
@@ -211,7 +215,7 @@
   /* ── 저장(5-6): entries·media 를 한 트랜잭션으로 ── */
   async function log(act, id, extra) { try { await S.db.tx(['log'], (t) => t.log.add(Object.assign({ at: isoLocal(), act, id, by: S.by, device: S.dev }, extra || {}))); } catch (e) { /* 기록 실패는 무시 */ } }
   function blocked() {
-    if (MEM() && !S.memAck) { memDialog(); return true; }
+    if (MEM()) { memDialog(); return true; } // D95 ②: 메모리 저장소에서는 새 기록·등급·고치기를 받지 않는다
     if (expired()) { toast('이 현장 앱은 만료되었습니다. 남은 기록을 보내고 정리해 주세요.', { img: IMG.warning }); return true; }
     return false;
   }
@@ -265,6 +269,7 @@
     return hold.e;
   }
   async function updateEntry(e, patch, act = 'entry.edit') {
+    if (MEM()) { memDialog(); return e; }
     const n = Object.assign({}, e, patch, { rev: e.rev + 1, updatedAt: isoLocal() });
     if ('memo' in patch) n.tags = TSF.tagsOf(n.memo);
     if (n.seq != null && n.outsideQuestion) n.outsideQuestion = false; // 문항을 붙이면 문항 외 참고에서 빠진다(D79)
@@ -344,12 +349,16 @@
     S.sends = (await S.db.all('sends')).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     pref('project', pid);
     document.title = SINGLE ? `TS현장 ${S.ad.project.codeName}` : 'TS현장';
+    S.bkCfg = Object.assign({ every: 10, at: null, lastId: null, mediaIds: [], n: 0 }, await S.db.meta('backup', {}));
+    S.bk = null;
+    S.lastSaveAt = [...S.entries.values(), ...S.marks.values()].map((x) => x.updatedAt).sort().pop() || null;
     const lock = await S.db.meta('lock', null);
     S.locked = !!lock;
     S.view = (S.sc || seeded) && S.by ? 's1' : 's0';
     render(); refreshFree();
     if (!S.sc) runSelfCheck();
-    if (MEM() && !S.memAck) memDialog();
+    if (MEM()) memDialog();
+    else protectInit();
   }
   /* 시연판 seed(ts-field-seed/1): 프로젝트 DB가 비어 있을 때 한 번만, 사용자가 만든 기록과 같은 형식으로 넣는다.
      ago 는 지금부터 몇 분 전. 보낸 묶음 1건(사내 반입 확인됨) 이전 기록은 보냄, 이후 기록은 보내지 않음으로 둔다 */
@@ -434,6 +443,159 @@
   }
   const lowSpace = () => S.free != null && S.free < 500 * 1048576;
 
+  /* ── D95 기록 보호 ── */
+  /* 영구 저장(persist) 여부를 확인하고, 허용되지 않았으면 한 번 더 요청한다(설치형은 대개 바로 허용) */
+  async function protectInit() {
+    try {
+      let p = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : false;
+      if (!p && navigator.storage && navigator.storage.persist) p = await navigator.storage.persist();
+      S.persisted = !!p;
+    } catch (e) { S.persisted = false; }
+    updateSaveBar(); bkSchedule();
+  }
+  function saveFile(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  }
+  /* ③ 자동 백업. 모바일 브라우저는 누르지 않은 내려받기를 막거나 매번 묻는다. 그래서 백업할 때가 되면(백업 뒤 기록 n건)
+     파일을 뒤에서 미리 만들어 두고, 상태 줄의 큰 「백업 파일 저장」 단추를 한 번 누르면 그 누름 안에서 바로 내려받는다.
+     형식은 보내기 묶음(ts-field-bundle/1, mode "backup")과 같아 사내 웹 반입·앱 「백업 불러오기」 모두 된다.
+     사진·동영상은 앞선 백업에 없던 것만 담고, 기록·등급(records.json)은 매번 전부 담는다. */
+  const bkSig = () => `${S.lastSaveAt}|${bkPending()}|${S.entries.size}|${S.marks.size}|${S.media.size}`;
+  function bkSchedule() {
+    clearTimeout(bkSchedule.t);
+    if (!bkDue()) return;
+    bkSchedule.t = setTimeout(() => bkBuild(), 1500);
+  }
+  async function bkBuild() {
+    if (S.bkBusy || MEM() || !S.db || !S.ad) return S.bk;
+    const sig = bkSig();
+    if (S.bk && S.bk.sig === sig) return S.bk;
+    S.bkBusy = true; updateSaveBar();
+    try {
+      const done = new Set(S.bkCfg.mediaIds || []);
+      const ms = [...S.media.values()].filter((m) => m.blob && !m.purged && !done.has(m.id) && !(S.entries.get(m.entryId) || {}).deleted);
+      const media = ms.map((m) => {
+        const e = S.entries.get(m.entryId), meta = (e && e.media.find((x) => x.id === m.id)) || {};
+        return { id: m.id, name: meta.name || m.id, mime: m.mime, size: m.blob.size, sha256: m.sha256, variant: 'original', blob: m.blob };
+      });
+      const seq = ((await S.db.meta('bundleSeq', 0)) || 0) + 1, at = isoLocal();
+      const r = await TSF.buildBundle({
+        appData: S.ad, device: { id: S.dev, alias: S.alias }, by: S.by || S.recs[0] || 'NA', selfCheck: TSF.selfCheck.toManifest(S.sc), mode: 'backup', bundleSeq: seq,
+        prevBundleId: S.bkCfg.lastId || null, entries: [...S.entries.values()], marks: [...S.marks.values()], media, thumbs: ms.filter((m) => m.thumb).map((m) => ({ id: m.id, blob: m.thumb })), log: await S.db.all('log'),
+      });
+      S.bk = { sig, seq, at, bundleId: r.bundleId, mediaIds: media.map((m) => m.id), entries: live().length, photos: photoN(),
+        parts: r.parts.map((p) => ({ n: p.n, name: p.name.replace(/^TS현장_/, 'TS현장백업_'), blob: p.blob, size: p.size, saved: false })) };
+    } catch (e) { console.error(e); S.bk = null; }
+    finally { S.bkBusy = false; updateSaveBar(); if (S.bk && S.bk.sig !== bkSig()) bkSchedule(); }
+    return S.bk;
+  }
+  /* 상태 줄·설정의 「백업 파일 저장」. 미리 만든 파일이 지금 기록과 같고 한 개면 누른 그 자리에서 바로 내려받는다 */
+  async function saveBackup() {
+    if (MEM()) { memDialog(); return; }
+    if (S.bk && S.bk.sig === bkSig() && S.bk.parts.length === 1) { const bk = S.bk; saveFile(bk.parts[0].blob, bk.parts[0].name); bk.parts[0].saved = true; await bkCommit(bk); return; }
+    S.bk = null;
+    const bk = await bkBuild();
+    if (!bk) { toast('백업 파일을 만들지 못했습니다. 기록은 폰에 그대로 있습니다. 저장 공간을 확인한 뒤 다시 눌러 주세요.', { img: IMG.warning, ms: 6000 }); return; }
+    backupSheet(bk);
+  }
+  function backupSheet(bk) {
+    const m = bk.parts.length;
+    const sh = sheet(`<h3>백업 파일 저장</h3><p style="margin:0 0 8px">기록 ${bk.entries}건 · 사진 ${bk.photos}장을 담았습니다(이번에 새로 담은 사진·동영상 ${bk.mediaIds.length}개). ${m > 1 ? `파일이 ${m}개라 하나씩 눌러 저장합니다.` : '아래 단추를 누르면 저장됩니다.'}</p>
+      ${bk.parts.map((p) => `<div class="part"><div><b>백업 파일 ${p.n} / ${m}</b><small>${esc(p.name)} · ${fmtMB(p.size)}</small></div><button class="btn" data-bp="${p.n}">${p.saved ? '저장함' : `저장 ${p.n}/${m}`}</button></div>`).join('')}
+      <p class="hint">「내 파일 → 다운로드」에 저장됩니다. 폰을 잃거나 앱이 지워지면 새로 설치한 앱의 「설정 → 백업 불러오기」에서 이 파일들을 고르면 되살아납니다. 백업 파일은 지우지 말고 모두 두세요.</p>
+      <div class="acts"><button class="btn line" data-x>나중에</button></div>`);
+    sh.querySelector('[data-x]').onclick = closeSheet;
+    sh.querySelectorAll('[data-bp]').forEach((b) => (b.onclick = async () => {
+      const p = bk.parts.find((x) => x.n === +b.dataset.bp);
+      saveFile(p.blob, p.name); p.saved = true; b.textContent = '저장함'; b.classList.add('ghost');
+      if (bk.parts.every((x) => x.saved)) { closeSheet(); await bkCommit(bk); }
+    }));
+  }
+  async function bkCommit(bk) {
+    const cfg = Object.assign({}, S.bkCfg, { at: bk.at, lastId: bk.bundleId, mediaIds: [...new Set([...(S.bkCfg.mediaIds || []), ...bk.mediaIds])], n: (S.bkCfg.n || 0) + 1, lastName: bk.parts[0].name });
+    const seq = Math.max((await S.db.meta('bundleSeq', 0)) || 0, bk.seq);
+    await S.db.tx(['meta', 'log'], (t) => { t.meta.put({ key: 'backup', value: cfg }); t.meta.put({ key: 'bundleSeq', value: seq }); t.log.add({ at: isoLocal(), act: 'backup', id: bk.bundleId, by: S.by, device: S.dev, parts: bk.parts.length }); });
+    S.bkCfg = cfg; S.bk = null;
+    render();
+    toast('백업 파일을 저장했습니다. 「내 파일 → 다운로드」의 TS현장백업 파일은 지우지 마세요.', { img: IMG.approve, ms: 5000 });
+  }
+  /* 상태 줄을 누르면: 저장 방식·영구 저장·백업 안내 */
+  function protectSheet() {
+    const p = S.persisted, c = S.bkCfg;
+    const sh = sheet(`<h3>기록 보관 상태</h3>
+      <p class="lead" style="margin:0 0 10px"><b>입력은 누르는 즉시 이 폰 안에 저장됩니다.</b> 인터넷이 없어도, 앱이 꺼져도 남아 있습니다.</p>
+      <p style="margin:0 0 10px">기록 ${live().length}건 · 사진 ${photoN()}장 · 마지막 저장 ${esc(ago(S.lastSaveAt))}</p>
+      ${p ? '<div class="band blue">영구 저장이 허용되었습니다. 폰 공간이 부족해도 브라우저가 기록을 지우지 않습니다.</div>'
+        : `<div class="band coral" style="display:block"><b>영구 저장이 허용되지 않았습니다.</b> 폰 공간이 부족하면 브라우저가 기록을 지울 수 있습니다. 홈 화면에 설치하면 대개 허용됩니다. 그 전까지는 백업 파일을 자주 저장하고 매일 보내기를 해 주세요.</div>${SINGLE ? installHtml() : `<details class="inst"><summary>설치하는 방법</summary>${installHtml()}</details>`}`}
+      <h4 style="margin:14px 0 4px">백업 파일</h4>
+      <p class="small" style="margin:0">마지막 백업 ${esc(ago(c.at))} · 백업 뒤 기록 ${bkPending()}건 · ${c.every ? `${c.every}건마다 알림` : '알림 꺼짐'}</p>
+      <div class="acts"><button class="btn line" data-act="pickBackup">백업 불러오기</button><button class="btn" data-act="saveBackup">백업 파일 저장</button></div>`);
+    sh.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => closeSheet()));
+  }
+  /* 백업 불러오기: 백업 파일(또는 보내기 조각)을 골라 기록·사진을 되살린다. 같은 기록은 rev 가 큰 것을 남긴다 */
+  async function restoreFiles(files) {
+    toast('백업 파일을 읽는 중입니다.', { ms: 8000 });
+    let res;
+    try { res = await TSF.readBundles(files); } catch (e) { res = { bundles: [], errors: [String(e && e.message)] }; }
+    const mine = res.bundles.filter((b) => b.project === S.ad.project.id);
+    if (!mine.length) { toast(res.bundles.length ? '다른 프로젝트의 백업 파일입니다. 이 프로젝트의 TS현장백업 파일을 골라 주세요.' : `백업 파일을 읽지 못했습니다. ${res.errors[0] || ''}`, { img: IMG.warning, ms: 7000 }); return; }
+    const devs = new Set(mine.map((b) => b.device));
+    if (devs.size > 1) { toast('여러 폰의 백업이 섞여 있습니다. 한 폰에서 만든 백업 파일만 골라 주세요.', { img: IMG.warning, ms: 7000 }); return; }
+    const dev = mine[0].device;
+    if ([...S.entries.values(), ...S.marks.values()].some((x) => x.device !== dev)) { toast('이 폰에 이미 다른 기록이 있어 백업을 합칠 수 없습니다. 새로 설치한 앱에서는 기록을 남기기 전에 백업을 불러와 주세요.', { img: IMG.warning, ms: 8000 }); return; }
+    const E = new Map(), M = new Map(), media = new Map(), thumbs = new Map();
+    for (const b of mine) {
+      const sent = b.mode !== 'backup', orig = new Set((b.manifest.media || []).filter((d) => d.variant === 'original').map((d) => d.id));
+      for (const e of b.records.entries || []) if (!E.has(e.id) || E.get(e.id).rev <= e.rev) E.set(e.id, Object.assign({}, e, { _sentRev: sent ? e.rev : 0 }));
+      for (const m of b.records.marks || []) if (!M.has(m.id) || M.get(m.id).rev <= m.rev) M.set(m.id, Object.assign({}, m, { _sentRev: sent ? m.rev : 0 }));
+      b.media.forEach((blob, id) => { if (orig.has(id)) media.set(id, { blob, bid: sent ? b.bundleId : null }); });
+      b.thumbs.forEach((blob, id) => thumbs.set(id, blob));
+    }
+    const ref = new Map();
+    E.forEach((e) => (e.media || []).forEach((mm) => ref.set(mm.id, Object.assign({ entryId: e.id }, mm))));
+    const missing = [...ref.keys()].filter((id) => !media.has(id) && !(S.media.get(id) || {}).blob).length;
+    const last = mine[mine.length - 1];
+    confirmSheet('백업 불러오기', `${hm(last.createdAt)} 백업에서 기록 ${[...E.values()].filter((e) => !e.deleted).length}건 · 등급·메모 ${M.size}건 · 사진·동영상 ${media.size}개를 이 폰에 되살립니다. 이 폰에 같은 기록이 있으면 더 새것을 남깁니다.${missing ? ` 사진·동영상 ${missing}개는 고른 파일에 없습니다. 앞선 백업 파일도 함께 고르면 되살아납니다.` : ''}`, '되살리기', () => restoreApply({ mine, dev, E, M, media, thumbs, ref }));
+  }
+  async function restoreApply({ mine, dev, E, M, media, thumbs, ref }) {
+    try {
+      const puts = { e: [], m: [], md: [] };
+      E.forEach((e) => { const l = S.entries.get(e.id); if (!l || l.rev < e.rev) puts.e.push(e); });
+      M.forEach((m) => { const l = S.marks.get(m.id); if (!l || l.rev < m.rev) puts.m.push(m); });
+      for (const [id, r] of ref) {
+        const l = S.media.get(id), x = media.get(id), th = thumbs.get(id);
+        if (l && (l.blob || !x)) continue;
+        const blob = x ? new Blob([x.blob], { type: r.mime }) : null;
+        let thumb = th ? new Blob([th], { type: 'image/jpeg' }) : (l && l.thumb) || null;
+        if (!thumb && blob && (r.mime || '').startsWith('image/')) { try { thumb = (await TSF.photoInfo(blob)).thumb; } catch (e) { thumb = null; } }
+        if (!blob && !thumb) continue;
+        puts.md.push({ id, entryId: r.entryId, blob, thumb, sha256: r.sha256, size: r.size, mime: r.mime, sentIn: x && x.bid, sentVariant: x && x.bid ? 'original' : null, purged: !blob });
+      }
+      const num = (id) => +(String(id).split('-')[2] || 0);
+      const seq = Math.max((await S.db.meta('seq', 0)) || 0, ...[...E.keys()].map(num));
+      const bseq = Math.max((await S.db.meta('bundleSeq', 0)) || 0, ...mine.map((b) => num(b.bundleId)));
+      const bks = mine.filter((b) => b.mode === 'backup');
+      const cfg = bks.length ? Object.assign({}, S.bkCfg, { at: bks[bks.length - 1].createdAt, lastId: bks[bks.length - 1].bundleId, mediaIds: [...new Set([...(S.bkCfg.mediaIds || []), ...bks.flatMap((b) => [...b.media.keys()])])] }) : S.bkCfg;
+      const recs = [...new Set([...S.recs, ...[...E.values(), ...M.values()].map((x) => x.by)])];
+      await S.db.tx(['meta', 'entries', 'marks', 'media', 'log'], (t) => {
+        puts.e.forEach((e) => t.entries.put(e)); puts.m.forEach((m) => t.marks.put(m)); puts.md.forEach((m) => t.media.put(m));
+        t.meta.put({ key: 'seq', value: seq }); t.meta.put({ key: 'bundleSeq', value: bseq }); t.meta.put({ key: 'backup', value: cfg });
+        t.meta.put({ key: 'device', value: { id: dev, alias: S.alias } });
+        t.meta.put({ key: 'recorders', value: { list: recs, cur: S.by || recs[0] || null } });
+        t.log.add({ at: isoLocal(), act: 'restore', id: mine.map((b) => b.bundleId).join(','), by: S.by, device: dev, entries: puts.e.length, media: puts.md.length });
+      });
+      pref('device', dev);
+      await openProject(S.ad.project.id);
+      go('s1');
+      toast(`백업을 되살렸습니다. 기록 ${puts.e.length}건 · 등급·메모 ${puts.m.length}건 · 사진·동영상 ${puts.md.filter((m) => m.blob).length}개.`, { img: IMG.approve, ms: 6000 });
+    } catch (e) {
+      console.error(e);
+      toast('백업을 되살리지 못했습니다. 기존 기록은 그대로입니다. 저장 공간을 확인한 뒤 다시 해 주세요.', { img: IMG.warning, ms: 7000 });
+    }
+  }
+
   /* ── 자가 진단(S0, S9) ── */
   async function runSelfCheck() {
     const prev = S.sc || {};
@@ -461,7 +623,7 @@
     const wide = WORK.includes(v) && S.lastLayout !== 'phone' && S.ad;
     main.className = (wide ? 'wide ' : '') + (enter ? 'enter' : '');
     top.innerHTML = (S.ad && !['welcome', 'boot'].includes(v) ? topHtml() : `<div class="home"><img src="${IMG.icon}" alt=""><div><b>TS현장</b><small>보안컨설팅 현장 기록</small></div></div>`) + memBandHtml();
-    top.classList.toggle('wrap', MEM());
+    top.classList.toggle('wrap', MEM() || !!S.ad);
     const showTabs = S.ad && !['welcome', 'boot', 's0'].includes(v);
     tabs.hidden = !showTabs;
     if (showTabs) tabs.innerHTML = tabsHtml();
@@ -491,10 +653,35 @@
       ${S.by ? `<button class="chip-me" data-act="recSheet" style="background:${teamColor(S.by)}" aria-label="기록자 바꾸기">${esc(S.by)}</button>` : ''}
       <button class="gear" data-act="go" data-v="s9" aria-label="설정">${ICO.gear}</button>`;
   }
-  /* 메모리 저장소일 때 항상 보이는 빨간 띠(누르면 보내기) */
+  /* 메모리 저장소일 때 항상 보이는 빨간 띠(보낼 기록이 있으면 보내기, 없으면 설치 안내). 정상 모드에서는 D95 ① 저장 상태 줄 */
   function memBandHtml() {
-    if (!MEM()) return '';
-    return `<button class="memband" id="memBand" role="alert" ${S.ad ? 'data-act="go" data-v="s7"' : ''}><span>저장 안 됨 · 닫으면 사라짐 · 보낸 뒤 닫으세요</span>${S.ad ? `<span class="n">보내지 않은 기록 ${unsentN()}건</span>` : ''}</button>`;
+    if (!MEM()) return S.ad ? `<div class="savebar ${bkDue() ? 'due' : ''} ${Date.now() - (S.pulseAt || 0) < 900 ? 'pulse' : ''}" id="saveBar" role="status">${saveBarInner()}</div>` : '';
+    return `<button class="memband" id="memBand" role="alert" ${S.ad && memRisk() ? 'data-act="go" data-v="s7"' : 'data-act="memDlg"'}><span>저장 안 됨 · 새 기록 막음 · 설치 주소로 여세요</span>${S.ad ? `<span class="n">보내지 않은 기록 ${unsentN()}건</span>` : ''}</button>`;
+  }
+  /* ── D95 ① 저장 상태 줄: 「저장됨 ✓ 기록 n건 · 사진 n장 · 방금」 + 영구 저장 여부, 백업할 때가 되면 「백업 파일 저장」 ── */
+  function ago(iso) {
+    if (!iso) return '아직 없음';
+    const s = (Date.now() - new Date(iso)) / 1000;
+    return s < 60 ? '방금' : s < 3600 ? `${Math.floor(s / 60)}분 전` : new Date(iso).toDateString() === new Date().toDateString() ? `오늘 ${hm(iso).slice(6)}` : hm(iso);
+  }
+  const photoN = () => [...S.media.values()].filter((m) => (m.mime || '').startsWith('image/') && !(S.entries.get(m.entryId) || {}).deleted).length;
+  /* 백업 뒤 새로 생기거나 바뀐 기록·등급 수(마지막 백업 시각 뒤 updatedAt) */
+  const bkPending = () => { const at = S.bkCfg.at; return [...S.entries.values(), ...S.marks.values()].filter((x) => !at || x.updatedAt > at).length; };
+  const bkDue = () => !MEM() && S.bkCfg.every > 0 && bkPending() >= S.bkCfg.every;
+  function saveBarInner() {
+    const due = bkDue(), p = S.persisted;
+    const sub = due ? `<small class="due">백업 뒤 기록 ${bkPending()}건 · 백업 파일을 저장해 두세요</small>`
+      : p ? '<small>영구 저장 허용됨 · 폰이 지우지 않습니다</small>'
+      : `<small class="warn">영구 저장 허용 안 됨 · 폰 공간이 부족하면 지울 수 있음 → 설치하세요</small>`;
+    return `<button class="sb-main" data-act="protectSheet"><b><i aria-hidden="true">✓</i>저장됨 · 기록 ${live().length}건 · 사진 ${photoN()}장 · ${esc(ago(S.lastSaveAt))}</b>${sub}</button>
+      ${due ? `<button class="btn sb-bk" data-act="saveBackup" ${S.bkBusy ? 'disabled' : ''}>${S.bkBusy ? '만드는 중' : '백업 파일 저장'}</button>` : ''}`;
+  }
+  function updateSaveBar(pulse) {
+    const el = $('#saveBar');
+    if (!el) return;
+    el.innerHTML = saveBarInner();
+    el.classList.toggle('due', bkDue());
+    if (pulse) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
   }
   function tabsHtml() {
     const on = (vs) => (vs.includes(S.view) ? 'on' : '');
@@ -514,7 +701,7 @@
         <button class="btn wide" data-act="pickPack"><img src="${IMG.import}" alt="" width="26">프로젝트 불러오기</button>
       </div>
       ${say('analyst', '현장에서는 사진과 메모만 남기셔도 됩니다. 문항은 돌아가서 같이 붙이겠습니다.')}
-      <div class="card rise" style="--i:2"><h2>불러오는 방법</h2><ol class="steps"><li>개인 메일에서 .tspack 첨부를 내려받습니다</li><li>[프로젝트 불러오기]를 누릅니다</li><li>「내 파일 → 다운로드」에서 그 파일을 고릅니다</li></ol></div>`;
+      <div class="card rise" style="--i:2"><h2>불러오는 방법</h2><ol class="steps"><li>개인 메일에서 .tspack 첨부를 내려받습니다</li><li>[프로젝트 불러오기]를 누릅니다</li><li>「내 파일 → 다운로드」에서 그 파일을 고릅니다</li></ol><p class="hint">앱을 다시 설치했다면 프로젝트를 불러온 뒤 「설정 → 백업 불러오기」로 TS현장백업 파일을 고르면 기록이 되살아납니다.</p></div>`;
   }
 
   /* S0 첫 실행·기기 점검 */
@@ -535,7 +722,7 @@
         <table class="check">${rows}</table>
         <p class="hint">열기 방식: ${esc(SINGLE ? '파일 하나(A안)' : '설치형(B안)')} · ${esc(location.protocol.replace(':', ''))}</p>
         <p class="hint">음성은 메모·문항 메모 칸에서 키보드 마이크(받아쓰기)로 남깁니다. 앱 안 녹음은 쓰지 않습니다.</p>
-        ${c1fail ? (MEM() ? `<div class="band coral" style="margin-top:10px;display:block">이 열기 방식에서는 기록이 폰에 저장되지 않습니다. 앱을 닫거나 새로 고치면 기록이 모두 사라집니다. 아래 순서로 다시 열어 주세요.${reopenHtml()}</div>` : '<div class="band coral" style="margin-top:10px">이 방식으로는 기록을 저장할 수 없습니다. 기록 버튼을 잠갔습니다. 설치형(B안) 주소로 열어 주세요.</div>') : ''}
+        ${c1fail ? (MEM() ? `<div class="band coral" style="margin-top:10px;display:block">여기서는 기록을 남길 수 없습니다. 이렇게 연 앱은 기록을 폰에 저장하지 못해 새 기록을 막았습니다. 아래 주소로 앱을 설치해 주세요.</div>${installHtml()}` : '<div class="band coral" style="margin-top:10px">이 방식으로는 기록을 저장할 수 없습니다. 기록 버튼을 잠갔습니다. 설치형(B안) 주소로 열어 주세요.</div>') : ''}
       </div>
       <div class="card rise" style="--i:2"><h2>기록자 고르기</h2>
         <div class="chips">${S.recs.map((i) => `<button class="chip ${S.by === i ? 'on' : ''}" data-act="setBy" data-i="${esc(i)}">${esc(i)}</button>`).join('')}
@@ -550,7 +737,7 @@
           : '<li>오른쪽 위 메뉴 ⋮ 를 누릅니다</li><li>「홈 화면에 추가」(또는 「앱 설치」)를 누릅니다</li><li>아이콘 이름을 확인하고 추가합니다</li>'}</ol>
         <p class="hint">아이콘 이름: TS현장 ${esc(SINGLE ? S.ad.project.codeName : '')}</p>
       </div>
-      <button class="btn wide rise" style="--i:4" data-act="start" ${(c1fail && !(MEM() && S.memAck)) || !S.by || !sc ? 'disabled' : ''}>${c1fail && MEM() ? '연습으로 시작하기' : '시작하기'}</button>`;
+      <button class="btn wide rise" style="--i:4" data-act="start" ${(c1fail && !MEM()) || !S.by || !sc ? 'disabled' : ''}>${MEM() ? '둘러보기(기록 안 됨)' : '시작하기'}</button>`;
   }
 
   /* S1 프로젝트 홈 */
@@ -845,7 +1032,7 @@
     return `${memDone}${say('reporter', '보낸 기록은 주간보고 재료로 모아 두겠습니다.')}
       <div class="card rise" style="--i:1"><h2 title="${esc(b.bundleId)}">${esc(refLabel(b.bundleId))} <small>조각 ${b.parts.length}개${b.light ? ' · 가벼운 보내기' : ''}</small></h2>
         ${b.parts.map((p) => `<div class="part"><div><b>조각 ${p.n} / ${b.parts.length}</b><small>${esc(p.name)} · ${fmtMB(p.size)}</small>${p.shared ? `<span class="tag t-mint" style="margin:0">${p.shared === 'download' ? '내려받음' : '공유함'}</span>` : ''}</div>
-          <button class="btn ${p.shared ? 'ghost' : ''}" data-act="sharePart" data-n="${p.n}"><img src="${IMG.mail}" alt="" width="22">메일로 보내기 ${p.n}/${b.parts.length}</button></div>`).join('')}
+          <div class="pbtns"><button class="btn ${p.shared ? 'ghost' : ''}" data-act="sharePart" data-n="${p.n}"><img src="${IMG.mail}" alt="" width="22">메일로 보내기 ${p.n}/${b.parts.length}</button>${MEM() ? `<button class="btn line" data-act="dlPart" data-n="${p.n}">내려받기 ${p.n}/${b.parts.length}</button>` : ''}</div></div>`).join('')}
         <p class="hint">공유 화면을 연 것만으로는 실제 발송을 알 수 없어 「공유함」까지만 표시합니다. 조각을 모두 공유하면 「보냄」으로 표시합니다.</p>
       </div>
       ${shareFallback ? `<div class="card rise" style="--i:2"><h2>공유가 안 될 때</h2><p class="muted small">조각 파일을 다운로드 폴더에 저장합니다. 그다음:</p><ol class="steps"><li>「내 파일」 앱 → 다운로드</li><li>조각 파일을 길게 누르기</li><li>공유 → 메일 앱</li><li>국내 담당 컨설턴트에게 보내기</li></ol></div>` : ''}
@@ -881,6 +1068,12 @@
         <p class="small" style="margin:0">사진 ${fmtMB(sizes.image)} · 동영상 ${fmtMB(sizes.video)} · 음성 ${fmtMB(sizes.audio)} · 썸네일 ${fmtMB(sizes.thumb)} · 보낸 조각 ${fmtMB(sizes.parts)}</p>
         <button class="btn line wide" style="margin-top:10px" data-act="purge" ${pg.size ? '' : 'disabled'}>보낸 묶음의 원본 정리(${pg.ms.length}개, ${fmtMB(pg.size)})</button>
         <p class="hint">「보냄」으로 표시된 묶음의 원본과 조각 파일만 지웁니다. 사무실 반입 전이라면 남겨 두세요. 썸네일과 기록은 프로젝트가 끝날 때까지 남깁니다.</p></div>
+      <div class="card rise" style="--i:3"><h2>기록 보호 <small>마지막 백업 ${esc(ago(S.bkCfg.at))}</small></h2>
+        <p style="margin:0 0 8px">입력은 누르는 즉시 폰 안에 저장됩니다. 폰을 잃거나 앱이 지워질 때를 대비해 기록이 쌓이면 백업 파일을 저장하라고 알려 드립니다.</p>
+        <div class="toggle"><b>백업 알림</b><span class="chips">${[5, 10, 20].map((k) => `<button class="chip ${S.bkCfg.every === k ? 'on' : ''}" data-act="bkEvery" data-k="${k}">${k}건마다</button>`).join('')}</span></div>
+        <p class="small muted" style="margin:6px 0 10px">백업 뒤 기록 ${bkPending()}건 · 영구 저장 ${S.persisted ? '허용됨' : '허용 안 됨(설치 권장)'}</p>
+        <div class="row"><button class="btn grow" data-act="saveBackup">백업 파일 저장</button><button class="btn line grow" data-act="pickBackup">백업 불러오기</button></div>
+        <p class="hint">백업 불러오기: 새로 설치한 앱에서 프로젝트 자료(.tspack)를 먼저 불러온 뒤, 「내 파일 → 다운로드」의 TS현장백업 파일을 모두 고릅니다. 보내기 조각 파일도 됩니다.</p></div>
       <div class="card rise" style="--i:3"><h2>잠금</h2><p class="small muted" style="margin:0 0 8px">숫자 4~6자리. 5분 동안 쓰지 않으면 다시 잠깁니다.</p>
         <div class="row"><button class="btn ghost grow" data-act="setLock">잠금 번호 정하기</button><button class="btn line grow" data-act="clearLock">잠금 끄기</button></div></div>
       <div class="card rise" style="--i:4"><h2>카메라 권장 설정</h2><ul class="small" style="margin:0;padding-left:18px"><li>사진 12MP(4:3), 고효율 사진(HEIF) 끄기</li><li>동영상 FHD 30fps, 한 번에 30초 이하</li><li>위치 태그 끄기 권장</li><li>얼굴·번호판·사원증이 보이면 기록에서 「개인정보 포함」을 켜 주세요</li></ul></div>
@@ -1071,7 +1264,7 @@
       confirmSheet('등급 지우기', `${gradeText(g)} 표시를 지웁니다. 등급은 나중에 agent가 제안합니다.`, '지우기', async () => { await setMark(seq, { grade: null }); render(); }, true);
       return;
     }
-    await setMark(seq, { grade: g, na: false, naReason: '' });
+    if (!(await setMark(seq, { grade: g, na: false, naReason: '' }))) return; // 막힘(메모리 저장소·만료)
     const hasEv = entriesAt(null, seq).some((e) => e.by === S.by) || (markOf(seq).memo || '').trim();
     render();
     if (!hasEv) toast('근거(사진·메모)가 없는 등급입니다. 사진이나 메모를 하나 남겨 주시면 좋겠습니다.', { img: IMG.reviewer, ms: 4500 });
@@ -1121,6 +1314,7 @@
       touchedE.forEach((e) => S.entries.set(e.id, e)); touchedM.forEach((m) => S.marks.set(m.id, m)); touchedMedia.forEach((m) => S.media.set(m.id, m));
       S.sends.unshift(send);
       S.built = send;
+      S.bk = null; bkSchedule(); // 미리 만든 백업은 묶음 번호가 겹치므로 다시 만든다
       S.building = null; render(true);
     } catch (err) {
       S.building = null; render();
@@ -1138,15 +1332,21 @@
       if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: p.name, text }); how = 'share'; }
     } catch (e) { if (e && e.name === 'AbortError') return; }
     if (!how) {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(file); a.download = p.name; document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+      saveFile(file, p.name);
       how = 'download';
       toast('조각을 다운로드 폴더에 저장했습니다. 「내 파일」에서 길게 눌러 메일로 공유해 주세요.', { img: IMG.mail, ms: 5000 });
     }
     p.shared = how;
     await S.db.put('sends', b);
     render();
+  }
+  /* 메모리 저장소: 공유 대신 바로 내려받기(D95 ②) */
+  async function dlPart(n) {
+    const b = S.built, p = b && b.parts.find((x) => x.n === n);
+    if (!p || !p.blob) return;
+    saveFile(new File([p.blob], p.name, { type: 'application/zip' }), p.name);
+    p.shared = 'download'; await S.db.put('sends', b); render();
+    toast('조각을 다운로드 폴더에 저장했습니다. 「내 파일」에서 길게 눌러 메일로 보내 주세요.', { img: IMG.mail, ms: 5000 });
   }
   async function purge() {
     const pg = sentPurge();
@@ -1252,6 +1452,13 @@
     closeBuilt: () => { S.built = null; render(); },
     reopenSend: (el) => { S.built = S.sends.find((s) => s.bundleId === el.dataset.id); render(true); },
     purge: () => purge(),
+    dlPart: (el) => dlPart(+el.dataset.n),
+    memDlg: () => memDialog(),
+    protectSheet: () => protectSheet(),
+    saveBackup: () => saveBackup(),
+    pickBackup: () => { if (blocked()) return; $('#inBackup').value = ''; $('#inBackup').click(); },
+    bkEvery: async (el) => { S.bkCfg = Object.assign({}, S.bkCfg, { every: +el.dataset.k }); await S.db.setMeta('backup', S.bkCfg); render(); bkSchedule(); },
+    copyUrl: async () => { const u = installUrl(); try { await navigator.clipboard.writeText(u); toast('설치 주소를 복사했습니다. 크롬·삼성 인터넷·사파리 주소창에 붙여 넣으세요.', { img: IMG.approve, ms: 5000 }); } catch (e) { toast('복사하지 못했습니다. 주소를 직접 적어 주세요: ' + u, { ms: 8000 }); } },
     setLock: () => {
       const sh = sheet(`<h3>잠금 번호 정하기</h3><label class="field"><span>숫자 4~6자리</span><input type="password" inputmode="numeric" maxlength="6" id="lp1" autocomplete="off"></label><label class="field"><span>한 번 더</span><input type="password" inputmode="numeric" maxlength="6" id="lp2" autocomplete="off"></label><div class="acts"><button class="btn line" id="lpX">그만두기</button><button class="btn" id="lpOk">정하기</button></div>`);
       sh.querySelector('#lpX').onclick = closeSheet;
@@ -1305,6 +1512,8 @@
   });
   ['#inPhoto', '#inVideo', '#inGallery'].forEach((s) => $(s).addEventListener('change', (e) => onFiles(e.target)));
   $('#inPack').addEventListener('change', (e) => e.target.files[0] && importPack(e.target.files[0]));
+  $('#inBackup').addEventListener('change', (e) => e.target.files.length && restoreFiles([...e.target.files]));
+  setInterval(() => updateSaveBar(), 30000); // 「방금 → n분 전」
   $('#inTest').addEventListener('change', (e) => {
     const ok = e.target.files && e.target.files[0];
     S.sc.C4 = ok ? { s: 'ok', msg: '카메라로 바로 찍을 수 있습니다(시험 사진은 저장하지 않았습니다).' } : { s: 'fallback', msg: '카메라를 바로 열 수 없습니다. 「갤러리에서 고르기」로 붙여 주세요.' };
