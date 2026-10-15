@@ -250,7 +250,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: none;
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
-/* IndexedDB 를 못 열어 메모리 저장소로 연 경우: 머리줄 안의 빨간 띠(항상 보임), 막는 안내 창, 보낸 뒤 큰 확인 코드 */
+/* IndexedDB 를 못 열어 메모리 저장소로 연 경우: 머리줄 안의 빨간 띠(항상 보임), 막는 안내 창. 보낸 뒤 「보냈습니다」 카드(D93: 확인 코드 표시 없음) */
 .top.wrap { flex-wrap: wrap; }
 .memband { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: space-between; align-items: center; background: var(--coral); color: #fff; border: 0; border-radius: var(--radius-sm); padding: 8px 12px; font: inherit; font-size: 13px; font-weight: 800; text-align: left; cursor: pointer; }
 .memband .n { background: #fff; color: var(--coral-ink); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
@@ -259,8 +259,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: none;
 .memdlg .acts1 { display: grid; gap: 8px; margin-top: 14px; }
 .memdlg a { word-break: break-all; }
 .btn.big { min-height: 64px; font-size: 18px; }
-.memdone { border: 2px solid var(--coral); }
-.code.big { font-size: 48px; letter-spacing: .2em; margin: 8px 0; user-select: all; }
+.sentdone { border: 2px solid var(--mint); }
 
 /* 현장 가이드(D80): S4 문항 기록. 큰 누름 칸(48px 이상), 체크는 줄 전체를 누른다 */
 .guide h2 .tag { margin-left: 0; }

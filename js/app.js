@@ -1,4 +1,4 @@
-/* TS 현장 앱 — 화면 S0~S9(설계서 5-4), 기록(5-5), 저장(5-6), 앱 자료(5-7), 보내기·확인 코드(5-8, 5-9), 디자인(5-12)
+/* TS 현장 앱 — 화면 S0~S9(설계서 5-4), 기록(5-5), 저장(5-6), 앱 자료(5-7), 보내기(5-8, 5-9 · D93 반입 확인 코드 화면 없음), 디자인(5-12)
    화면 글자는 한국어만(D61). 등급은 항상 뜻을 붙인다(D74). 현장 등급은 판단 기록이며 확정값이 아니다(D8). */
 (function (G) {
   'use strict';
@@ -467,7 +467,7 @@
     if (showTabs) tabs.innerHTML = tabsHtml();
     const fab = $('#fab'); if (fab) fab.remove();
     if (showTabs) $('#app').insertAdjacentHTML('beforeend', `<button class="fab" id="fab" data-act="shoot" data-long="shootMenu" aria-label="찍기">${ICO.camera}찍기</button>`);
-    const R = { welcome: vWelcome, s0: vS0, s1: vS1, s2: vWork, s3: vWork, s4: vWork, s6: vS6, s7: vS7, s8: vS8, s9: vS9 }[v];
+    const R = { welcome: vWelcome, s0: vS0, s1: vS1, s2: vWork, s3: vWork, s4: vWork, s6: vS6, s7: vS7, s8: vS7, s9: vS9 }[v];
     main.innerHTML = R ? R() : '';
     if (S.locked) lockScreen();
     afterRender(enter);
@@ -814,7 +814,7 @@
     const b = S.built;
     const modes = [['daily', '매일 보내기', '새 기록과 새 사진·동영상·음성을 보냅니다(기본).'], ['original', '원본 보내기', '가볍게 보냈던 사진과 동영상의 원본을 보냅니다.'], ['all', '전부 다시 보내기', '모든 원본을 다시 보냅니다. 사내에서 중복은 걸러 냅니다.']];
     const mem = MEM();
-    return `<div class="qhead"><h1>보내기</h1><button class="btn line" style="min-height:40px" data-act="go" data-v="s8">확인 코드 넣기</button></div>
+    return `<div class="qhead"><h1>보내기</h1></div>
       ${mem && !b ? `<div class="band coral"><img src="${IMG.warning}" alt=""><div>이 열기 방식에서는 기록이 저장되지 않습니다. 닫기 전에 아래 <b>「묶음 만들기·보내기」</b>를 누르고 조각을 모두 <b>「메일로 보내기」</b>까지 마쳐 주세요.</div></div>` : ''}
       ${b ? builtHtml(b, shareFallback) : `
       <div class="card rise" style="--i:0"><h2>보낼 내용</h2>
@@ -836,46 +836,40 @@
       ${encOn ? `<div class="card rise" style="--i:2"><h2>암호화(선택 기능)</h2><label class="field"><span>출국 전에 전화·대면으로 정한 암호문(6자리 이상)</span><input type="password" id="encPass" autocomplete="off"></label><p class="hint">암호문은 이 기기에 저장하지 않습니다. 비워 두면 암호화하지 않습니다.</p></div>` : ''}
       <div class="card rise" style="--i:3"><h2>받는 사람</h2><p class="muted small" style="margin:0">메일 주소는 앱에 넣지 않습니다. 메일 앱에서 국내 담당 컨설턴트 회사 메일을 골라 주세요.</p></div>
       ${S.building ? `<div class="card"><b>${esc(S.building)}</b><div class="prog"><i style="width:${S.buildPct || 5}%"></i></div></div>` : `<button class="btn wide ${mem ? 'big danger' : ''}" data-act="build" ${sel.out.length + ue.length + unsentMarks().length === 0 && mode === 'daily' ? 'disabled' : ''}>${mem ? '묶음 만들기·보내기' : '묶음 만들기'}</button>`}`}
-      ${S.sends.length ? `<div class="card" style="margin-top:12px"><h2>보낸 묶음</h2>${S.sends.slice(0, 10).map((s) => `<div class="part"><div><b class="num" title="${esc(s.bundleId)}">${esc(refLabel(s.bundleId))}</b><small>${esc(hm(s.createdAt))} · 조각 ${s.parts.length}개 · 공유 ${s.parts.filter((p) => p.shared).length}/${s.parts.length}</small></div>${s.confirmed ? '<span class="tag t-mint">사내 반입 확인됨</span>' : `<button class="btn ghost" style="min-height:40px" data-act="reopenSend" data-id="${esc(s.bundleId)}">조각 보기</button>`}</div>`).join('')}</div>` : ''}`;
+      ${S.sends.length ? `<div class="card" style="margin-top:12px"><h2>보낸 묶음</h2>${S.sends.slice(0, 10).map((s) => `<div class="part"><div><b class="num" title="${esc(s.bundleId)}">${esc(refLabel(s.bundleId))}</b><small>${esc(hm(s.createdAt))} · 조각 ${s.parts.length}개 · 공유 ${s.parts.filter((p) => p.shared).length}/${s.parts.length}</small></div>${isSent(s) ? '<span class="tag t-mint">보냄</span>' : `<button class="btn ghost" style="min-height:40px" data-act="reopenSend" data-id="${esc(s.bundleId)}">조각 보기</button>`}</div>`).join('')}</div>` : ''}`;
   }
   function builtHtml(b, shareFallback) {
-    const allShared = b.parts.every((p) => p.shared);
-    const memDone = MEM() ? (allShared
-      ? `<div class="card memdone rise" style="--i:0" role="alert"><h2>보냈습니다</h2><p style="margin:0"><b>확인 코드는 이 화면을 닫기 전에 받아 두세요.</b></p>
-          <div class="code big" id="memCode">${esc(b.receiptCode || '')}</div>
-          <p class="hint">적어 두거나 화면을 캡처해 두세요. 이 열기 방식에서는 앱을 닫으면 보내기 이력이 사라져 「확인 코드 넣기」로 맞춰 볼 수 없습니다. 국내 담당자가 알려 주는 코드와 같으면 반입된 것입니다.</p></div>`
-      : `<div class="band coral"><img src="${IMG.warning}" alt="">조각을 모두 「메일로 보내기」 하면 확인 코드가 크게 나옵니다. 그 전에 닫으면 기록이 사라집니다.</div>`) : '';
+    const memDone = isSent(b)
+      ? `<div class="card sentdone rise" style="--i:0" role="status"><h2>보냈습니다</h2><p style="margin:0">메일로 보낸 뒤에 앱을 닫아도 됩니다.</p></div>`
+      : MEM() ? `<div class="band coral"><img src="${IMG.warning}" alt="">조각을 모두 「메일로 보내기」 하기 전에 닫으면 기록이 사라집니다.</div>` : '';
     return `${memDone}${say('reporter', '보낸 기록은 주간보고 재료로 모아 두겠습니다.')}
       <div class="card rise" style="--i:1"><h2 title="${esc(b.bundleId)}">${esc(refLabel(b.bundleId))} <small>조각 ${b.parts.length}개${b.light ? ' · 가벼운 보내기' : ''}</small></h2>
         ${b.parts.map((p) => `<div class="part"><div><b>조각 ${p.n} / ${b.parts.length}</b><small>${esc(p.name)} · ${fmtMB(p.size)}</small>${p.shared ? `<span class="tag t-mint" style="margin:0">${p.shared === 'download' ? '내려받음' : '공유함'}</span>` : ''}</div>
           <button class="btn ${p.shared ? 'ghost' : ''}" data-act="sharePart" data-n="${p.n}"><img src="${IMG.mail}" alt="" width="22">메일로 보내기 ${p.n}/${b.parts.length}</button></div>`).join('')}
-        <p class="hint">공유 화면을 연 것만으로는 실제 발송을 알 수 없어 「공유함」까지만 표시합니다. 사내 반입은 확인 코드로만 확정합니다.</p>
+        <p class="hint">공유 화면을 연 것만으로는 실제 발송을 알 수 없어 「공유함」까지만 표시합니다. 조각을 모두 공유하면 「보냄」으로 표시합니다.</p>
       </div>
       ${shareFallback ? `<div class="card rise" style="--i:2"><h2>공유가 안 될 때</h2><p class="muted small">조각 파일을 다운로드 폴더에 저장합니다. 그다음:</p><ol class="steps"><li>「내 파일」 앱 → 다운로드</li><li>조각 파일을 길게 누르기</li><li>공유 → 메일 앱</li><li>국내 담당 컨설턴트에게 보내기</li></ol></div>` : ''}
-      <div class="row"><button class="btn line grow" data-act="closeBuilt">닫기</button><button class="btn ghost grow" data-act="go" data-v="s8">확인 코드 넣기</button></div>`;
+      <div class="row"><button class="btn line grow" data-act="closeBuilt">닫기</button></div>`;
   }
-
-  /* S8 확인 코드 */
-  function vS8() {
-    const open = S.sends.filter((s) => !s.confirmed);
-    return `<div class="card rise" style="--i:0"><h2>사내 반입 확인 코드</h2>
-        <p class="muted small">국내 컨설턴트가 사내 웹에서 모든 조각을 반입하면 6자리 코드가 나옵니다. 전화·메신저로 받은 코드를 넣어 주세요.</p>
-        <input type="text" id="code" class="code" maxlength="6" autocomplete="off" autocapitalize="characters" inputmode="text" placeholder="------">
-        <button class="btn wide" style="margin-top:12px" data-act="checkCode">확인하기</button></div>
-      <div class="card rise" style="--i:1"><h2>확인을 기다리는 묶음 <small>${open.length}개</small></h2>${open.length ? open.map((s) => `<div class="part"><div><b class="num" title="${esc(s.bundleId)}">${esc(refLabel(s.bundleId))}</b><small>${esc(hm(s.createdAt))} · 조각 ${s.parts.length}개</small></div><span class="tag t-amber">확인 전</span></div>`).join('') : '<p class="muted small" style="margin:0">모든 묶음이 확인되었습니다.</p>'}</div>`;
+  /* 보냄 = 조각을 모두 공유했거나 내려받음(D93: 반입 확인 코드 단계 없음) */
+  function isSent(s) { return !!(s && s.parts.length && s.parts.every((p) => p.shared)); }
+  function sentPurge() {
+    const ids = new Set(S.sends.filter(isSent).map((s) => s.bundleId));
+    const ms = [...S.media.values()].filter((m) => m.blob && ids.has(m.sentIn) && m.sentVariant === 'original');
+    const ss = S.sends.filter((s) => ids.has(s.bundleId) && s.parts.some((p) => p.blob));
+    const size = ms.reduce((a, m) => a + m.blob.size, 0) + ss.reduce((a, s) => a + s.parts.reduce((b, p) => b + ((p.blob && p.blob.size) || 0), 0), 0);
+    return { ms, ss, size };
   }
 
   /* S9 설정 */
   function vS9() {
-    const sizes = { image: 0, video: 0, audio: 0, thumb: 0, parts: 0 }, purgeable = { n: 0, size: 0 };
-    const conf = new Set(S.sends.filter((s) => s.confirmed).map((s) => s.bundleId));
+    const sizes = { image: 0, video: 0, audio: 0, thumb: 0, parts: 0 }, pg = sentPurge();
     for (const m of S.media.values()) {
       const k = (m.mime || '').split('/')[0];
       if (m.blob && sizes[k] != null) sizes[k] += m.blob.size;
       if (m.thumb) sizes.thumb += m.thumb.size;
-      if (m.blob && conf.has(m.sentIn) && m.sentVariant === 'original') { purgeable.n++; purgeable.size += m.blob.size; }
     }
-    S.sends.forEach((s) => s.parts.forEach((p) => { if (p.blob) { sizes.parts += p.blob.size; if (s.confirmed) purgeable.size += p.blob.size; } }));
+    S.sends.forEach((s) => s.parts.forEach((p) => { if (p.blob) sizes.parts += p.blob.size; }));
     const sc = S.sc || {};
     return `${bigCard(0)}<div class="card rise" style="--i:0"><h2>기록자</h2><div class="chips">${S.recs.map((i) => `<button class="chip ${S.by === i ? 'on' : ''}" data-act="setBy" data-i="${esc(i)}">${esc(i)}</button>`).join('')}<button class="chip" data-act="addRec">다른 사람 추가</button></div></div>
       <div class="card rise" style="--i:1"><h2>기기 정보</h2>
@@ -885,8 +879,8 @@
         <button class="btn ghost wide" data-act="go" data-v="s0">기기 점검 다시 하기</button></div>
       <div class="card rise" style="--i:2"><h2>저장 공간 <small>${S.free != null ? '남은 공간 약 ' + fmtMB(S.free) : ''}</small></h2>
         <p class="small" style="margin:0">사진 ${fmtMB(sizes.image)} · 동영상 ${fmtMB(sizes.video)} · 음성 ${fmtMB(sizes.audio)} · 썸네일 ${fmtMB(sizes.thumb)} · 보낸 조각 ${fmtMB(sizes.parts)}</p>
-        <button class="btn line wide" style="margin-top:10px" data-act="purge" ${purgeable.size ? '' : 'disabled'}>사내 반입 확인된 원본 정리(${purgeable.n}개, ${fmtMB(purgeable.size)})</button>
-        <p class="hint">확인 코드를 받은 묶음의 원본과 조각 파일만 지웁니다. 썸네일과 기록은 프로젝트가 끝날 때까지 남깁니다.</p></div>
+        <button class="btn line wide" style="margin-top:10px" data-act="purge" ${pg.size ? '' : 'disabled'}>보낸 묶음의 원본 정리(${pg.ms.length}개, ${fmtMB(pg.size)})</button>
+        <p class="hint">「보냄」으로 표시된 묶음의 원본과 조각 파일만 지웁니다. 사무실 반입 전이라면 남겨 두세요. 썸네일과 기록은 프로젝트가 끝날 때까지 남깁니다.</p></div>
       <div class="card rise" style="--i:3"><h2>잠금</h2><p class="small muted" style="margin:0 0 8px">숫자 4~6자리. 5분 동안 쓰지 않으면 다시 잠깁니다.</p>
         <div class="row"><button class="btn ghost grow" data-act="setLock">잠금 번호 정하기</button><button class="btn line grow" data-act="clearLock">잠금 끄기</button></div></div>
       <div class="card rise" style="--i:4"><h2>카메라 권장 설정</h2><ul class="small" style="margin:0;padding-left:18px"><li>사진 12MP(4:3), 고효율 사진(HEIF) 끄기</li><li>동영상 FHD 30fps, 한 번에 30초 이하</li><li>위치 태그 끄기 권장</li><li>얼굴·번호판·사원증이 보이면 기록에서 「개인정보 포함」을 켜 주세요</li></ul></div>
@@ -1138,7 +1132,7 @@
     const b = S.built; const p = b && b.parts.find((x) => x.n === n);
     if (!p || !p.blob) { toast('조각 파일이 정리되어 다시 보낼 수 없습니다. 「전부 다시 보내기」로 새 묶음을 만들어 주세요.'); return; }
     const file = new File([p.blob], p.name, { type: 'application/zip' });
-    const text = `TS현장 ${String(S.ad.project.codeName).replace(/\s+/g, '')} ${S.by} ${hm(b.createdAt)} 묶음 ${n}/${b.parts.length}, 확인 코드는 사내 반입 후 받음`;
+    const text = `TS현장 ${String(S.ad.project.codeName).replace(/\s+/g, '')} ${S.by} ${hm(b.createdAt)} 묶음 ${n}/${b.parts.length}`;
     let how = null;
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: p.name, text }); how = 'share'; }
@@ -1154,22 +1148,12 @@
     await S.db.put('sends', b);
     render();
   }
-  async function checkCode() {
-    const v = ($('#code').value || '').trim().toUpperCase();
-    if (!/^[0-9A-F]{6}$/.test(v)) { toast('확인 코드는 숫자와 A~F로 된 6자리입니다. 다시 확인해 주세요.'); return; }
-    const s = S.sends.find((x) => x.receiptCode === v);
-    if (!s) { toast('이 기기에서 보낸 묶음과 맞는 코드가 없습니다. 조각이 모두 반입되었는지 국내 담당자에게 확인해 주세요.', { img: IMG.warning, ms: 6000 }); return; }
-    if (s.confirmed) { toast(`${refLabel(s.bundleId)}은 이미 사내 반입 확인되었습니다.`); return; }
-    s.confirmed = true; s.confirmedAt = isoLocal();
-    await S.db.put('sends', s); await log('confirm', s.bundleId);
-    toast(`${refLabel(s.bundleId)}이 사내 반입 확인되었습니다. 원본은 「설정 → 저장 공간」에서 정리할 수 있습니다.`, { img: IMG.approve, ms: 5000 });
-    render(true);
-  }
   async function purge() {
-    confirmSheet('원본 정리', '사내 반입 확인된 묶음의 원본 사진·동영상·음성과 조각 파일을 이 기기에서 지웁니다. 썸네일과 기록은 남습니다.', '정리하기', async () => {
-      const conf = new Set(S.sends.filter((s) => s.confirmed).map((s) => s.bundleId));
-      const ms = [...S.media.values()].filter((m) => m.blob && conf.has(m.sentIn) && m.sentVariant === 'original').map((m) => Object.assign({}, m, { blob: null, purged: true }));
-      const ss = S.sends.filter((s) => s.confirmed).map((s) => Object.assign({}, s, { parts: s.parts.map((p) => Object.assign({}, p, { blob: null })) }));
+    const pg = sentPurge();
+    confirmSheet('원본 정리', `보낸 묶음에 들어간 원본 ${pg.ms.length}개를 폰에서 지웁니다. 사무실 반입 전이라면 남겨 두세요.`, '정리하기', async () => {
+      const cur = sentPurge();
+      const ms = cur.ms.map((m) => Object.assign({}, m, { blob: null, purged: true }));
+      const ss = cur.ss.map((s) => Object.assign({}, s, { parts: s.parts.map((p) => Object.assign({}, p, { blob: null })) }));
       await S.db.tx(['media', 'sends', 'log'], (t) => { ms.forEach((m) => t.media.put(m)); ss.forEach((s) => t.sends.put(s)); t.log.add({ at: isoLocal(), act: 'purge', id: String(ms.length), by: S.by, device: S.dev }); });
       ms.forEach((m) => S.media.set(m.id, m));
       S.sends = S.sends.map((s) => ss.find((x) => x.bundleId === s.bundleId) || s);
@@ -1267,7 +1251,6 @@
     sharePart: (el) => sharePart(+el.dataset.n),
     closeBuilt: () => { S.built = null; render(); },
     reopenSend: (el) => { S.built = S.sends.find((s) => s.bundleId === el.dataset.id); render(true); },
-    checkCode: () => checkCode(),
     purge: () => purge(),
     setLock: () => {
       const sh = sheet(`<h3>잠금 번호 정하기</h3><label class="field"><span>숫자 4~6자리</span><input type="password" inputmode="numeric" maxlength="6" id="lp1" autocomplete="off"></label><label class="field"><span>한 번 더</span><input type="password" inputmode="numeric" maxlength="6" id="lp2" autocomplete="off"></label><div class="acts"><button class="btn line" id="lpX">그만두기</button><button class="btn" id="lpOk">정하기</button></div>`);
@@ -1320,7 +1303,6 @@
     if (t.dataset.change === 'place') { S.place = t.value; S.seq = null; S.outView = false; render(); }
     if (t.dataset.change === 'mode') { S.settings.sendMode = t.value; await S.db.setMeta('settings', S.settings); render(); }
   });
-  document.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'code') checkCode(); });
   ['#inPhoto', '#inVideo', '#inGallery'].forEach((s) => $(s).addEventListener('change', (e) => onFiles(e.target)));
   $('#inPack').addEventListener('change', (e) => e.target.files[0] && importPack(e.target.files[0]));
   $('#inTest').addEventListener('change', (e) => {
