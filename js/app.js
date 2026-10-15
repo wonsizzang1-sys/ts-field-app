@@ -543,7 +543,9 @@
         <p class="hint">기록마다 고른 이니셜이 붙습니다. 나중에 오른쪽 위에서 바꿀 수 있습니다.</p>
       </div>
       <div class="card rise" style="--i:3"><h2>홈 화면에 추가</h2>
-        <ol class="steps">${samsung
+        <ol class="steps">${/iPhone|iPad|iPod/i.test(navigator.userAgent)
+          ? '<li>사파리 아래쪽 공유 단추(네모에 위 화살표)를 누릅니다</li><li>「홈 화면에 추가」를 누릅니다</li><li>홈 화면 아이콘으로만 실행합니다(사파리에서 바로 쓰면 오래 안 쓸 때 기록이 지워질 수 있습니다)</li>'
+          : samsung
           ? '<li>오른쪽 아래 메뉴 ≡ 를 누릅니다</li><li>「현재 페이지 추가」를 누릅니다</li><li>「홈 화면」을 고릅니다</li>'
           : '<li>오른쪽 위 메뉴 ⋮ 를 누릅니다</li><li>「홈 화면에 추가」(또는 「앱 설치」)를 누릅니다</li><li>아이콘 이름을 확인하고 추가합니다</li>'}</ol>
         <p class="hint">아이콘 이름: TS현장 ${esc(SINGLE ? S.ad.project.codeName : '')}</p>
