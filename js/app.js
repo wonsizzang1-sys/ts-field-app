@@ -326,6 +326,7 @@
     return openProject(d.project.id);
   }
   async function openProject(pid) {
+    if (S.ad && S.ad.project.id !== pid) resetProj();
     if (!S.db || S.db.pid !== pid) { if (S.db) S.db.idb.close(); S.db = await TSF.openProject(pid); }
     const all = await S.db.all('appData');
     if (!all.length) { S.view = 'welcome'; render(); return; }
@@ -424,16 +425,54 @@
     });
     return true;
   }
+  /* 프로젝트 자료 불러오기. 안 되면 반드시 이유(빈 파일·용량·압축 파일·형식·빠진 내용·만료·저장 공간)를 알린다 */
   async function importPack(file) {
-    try {
-      const d = JSON.parse(await file.text());
-      if (!validAppData(d)) throw new Error('format');
-      await openWithData(d, true);
-    } catch (e) {
-      const nm = (file && file.name) || '';
-      const why = e && e.message === 'format' ? '' : ' (' + ((e && e.message) || '읽기 실패') + ')';
-      toast('「' + nm + '」은(는) 불러올 수 없습니다. 사내에서 받은 프로젝트 자료(.tspack)인지 확인해 주세요.' + why, { img: IMG.warning, ms: 7000 });
+    const nm = (file && file.name) || '';
+    const fail = (why) => toast(`「${nm}」을(를) 불러오지 못했습니다. ${why}`, { img: IMG.warning, ms: 8000 });
+    if (!file || !file.size) return fail('빈 파일입니다. 메일에서 다시 내려받아 주세요.');
+    if (file.size > 30 * 1048576) return fail(`파일이 너무 큽니다(${fmtMB(file.size)}). 프로젝트 자료(.tspack)는 보통 1MB 안팎입니다. 다른 파일을 고르지 않았는지 확인해 주세요.`);
+    let text, d;
+    try { text = await file.text(); } catch (e) { return fail('파일을 읽지 못했습니다. 내려받기가 끝났는지 확인한 뒤 다시 골라 주세요.'); }
+    if (text.startsWith('PK')) return fail('압축 파일(.zip)입니다. 백업 파일이면 「설정 → 백업 불러오기」에서 골라 주세요.');
+    try { d = JSON.parse(text); } catch (e) { return fail('프로젝트 자료(.tspack) 형식이 아닙니다. 파일이 깨졌거나 다른 파일입니다.'); }
+    if (!d || d.format !== 'ts-field-app-data/1') return fail('프로젝트 자료(.tspack) 형식이 아닙니다. 사내에서 받은 .tspack 파일인지 확인해 주세요.');
+    if (!validAppData(d)) return fail('자료 안에 프로젝트·차수·장소·문항 중 빠진 것이 있습니다. 사내에서 다시 만들어 받아 주세요.');
+    if (d.expiresAt && new Date() > new Date(d.expiresAt + 'T23:59:59')) return fail(`만료된 자료입니다(만료일 ${d.expiresAt}). 사내에서 새 자료를 받아 주세요.`);
+    try { await openWithData(d, true); } catch (e) {
+      const full = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+      fail(full ? '폰 저장 공간이 부족합니다. 공간을 비운 뒤 다시 불러와 주세요.' : `저장하지 못했습니다(${(e && e.message) || '알 수 없는 오류'}). 다시 해 주세요.`);
     }
+  }
+  /* ── 홈(프로젝트 고르기, r10): 이 기기에 불러온 프로젝트마다 카드 1장. 기록은 프로젝트마다 다른 DB(ts_field_{ID})에 있어 섞이지 않는다 ── */
+  function resetProj() {
+    clearTimeout(bkSchedule.t);
+    Object.values(draftTimers).forEach(clearTimeout);
+    urlCache.forEach((u) => u && URL.revokeObjectURL(u)); urlCache.clear(); // 기록 ID 가 프로젝트끼리 같을 수 있어 썸네일을 비운다
+    Object.assign(S, { place: null, seq: null, outView: false, s3f: 'all', mine: false, built: null, bk: null, gOpen: {}, lastSaveAt: null });
+    S.pick.clear();
+  }
+  async function projSummary(pid) {
+    const cur = S.db && S.db.pid === pid;
+    let db = cur ? S.db : null;
+    try {
+      if (!db) db = await TSF.openProject(pid);
+      const ads = await db.all('appData');
+      if (!ads.length) return null;
+      const ad = ads.sort((a, b) => b.dataRev - a.dataRev)[0];
+      const es = await db.all('entries'), ms = await db.all('marks');
+      return { pid, codeName: ad.project.codeName, round: ad.round.label, expiresAt: ad.expiresAt,
+        n: es.filter((e) => !e.deleted).length, uns: [...es, ...ms].filter((x) => (x._sentRev || 0) < x.rev).length,
+        last: [...es, ...ms].map((x) => x.updatedAt).sort().pop() || null };
+    } catch (e) { return null; } finally { if (db && !cur) db.idb.close(); }
+  }
+  async function goHome() {
+    closeSheet();
+    const mode = TSF.storageMode;
+    const L = [];
+    for (const pid of await TSF.listProjects()) { const p = await projSummary(pid); if (p) L.push(p); }
+    TSF.storageMode = mode; // 다른 DB 를 못 열어도 지금 저장 방식은 그대로
+    S.homeList = L.sort((a, b) => ((b.last || '') > (a.last || '') ? 1 : -1));
+    go('home');
   }
   async function refreshFree() {
     const now = Date.now();
@@ -470,7 +509,7 @@
   }
   async function bkBuild() {
     if (S.bkBusy || MEM() || !S.db || !S.ad) return S.bk;
-    const sig = bkSig();
+    const sig = bkSig(), pid0 = S.ad.project.id;
     if (S.bk && S.bk.sig === sig) return S.bk;
     S.bkBusy = true; updateSaveBar();
     try {
@@ -485,6 +524,7 @@
         appData: S.ad, device: { id: S.dev, alias: S.alias }, by: S.by || S.recs[0] || 'NA', selfCheck: TSF.selfCheck.toManifest(S.sc), mode: 'backup', bundleSeq: seq,
         prevBundleId: S.bkCfg.lastId || null, entries: [...S.entries.values()], marks: [...S.marks.values()], media, thumbs: ms.filter((m) => m.thumb).map((m) => ({ id: m.id, blob: m.thumb })), log: await S.db.all('log'),
       });
+      if (S.ad.project.id !== pid0) return null; // 만드는 사이 다른 프로젝트로 바꿈
       S.bk = { sig, seq, at, bundleId: r.bundleId, mediaIds: media.map((m) => m.id), entries: live().length, photos: photoN(),
         parts: r.parts.map((p) => ({ n: p.n, name: p.name.replace(/^TS현장_/, 'TS현장백업_'), blob: p.blob, size: p.size, saved: false })) };
     } catch (e) { console.error(e); S.bk = null; }
@@ -622,14 +662,15 @@
     S.lastLayout = layout();
     const wide = WORK.includes(v) && S.lastLayout !== 'phone' && S.ad;
     main.className = (wide ? 'wide ' : '') + (enter ? 'enter' : '');
-    top.innerHTML = (S.ad && !['welcome', 'boot'].includes(v) ? topHtml() : `<div class="home"><img src="${IMG.icon}" alt=""><div><b>TS현장</b><small>보안컨설팅 현장 기록</small></div></div>`) + memBandHtml();
+    const atHome = v === 'home'; // 홈에서는 프로젝트별 상태 줄 대신 카드마다 기록 수를 보인다(메모리 빨간 띠는 그대로)
+    top.innerHTML = (S.ad && !['welcome', 'boot', 'home'].includes(v) ? topHtml() : `<div class="home"><img src="${IMG.icon}" alt=""><div><b>TS현장</b><small>${atHome ? '프로젝트 고르기' : '보안컨설팅 현장 기록'}</small></div></div>`) + (atHome && !MEM() ? '' : memBandHtml());
     top.classList.toggle('wrap', MEM() || !!S.ad);
-    const showTabs = S.ad && !['welcome', 'boot', 's0'].includes(v);
+    const showTabs = S.ad && !['welcome', 'boot', 's0', 'home'].includes(v);
     tabs.hidden = !showTabs;
     if (showTabs) tabs.innerHTML = tabsHtml();
     const fab = $('#fab'); if (fab) fab.remove();
     if (showTabs) $('#app').insertAdjacentHTML('beforeend', `<button class="fab" id="fab" data-act="shoot" data-long="shootMenu" aria-label="찍기">${ICO.camera}찍기</button>`);
-    const R = { welcome: vWelcome, s0: vS0, s1: vS1, s2: vWork, s3: vWork, s4: vWork, s6: vS6, s7: vS7, s8: vS7, s9: vS9 }[v];
+    const R = { welcome: vWelcome, home: vHome, s0: vS0, s1: vS1, s2: vWork, s3: vWork, s4: vWork, s6: vS6, s7: vS7, s8: vS7, s9: vS9 }[v];
     main.innerHTML = R ? R() : '';
     if (S.locked) lockScreen();
     afterRender(enter);
@@ -649,7 +690,7 @@
   }
   function topHtml() {
     const et = curEt();
-    return `<button class="home" data-act="home"><img src="${IMG.icon}" alt=""><div><b>${esc(S.ad.project.codeName)}</b><small>${esc(S.ad.round.label)} · ${esc(et.name)}${MEM() ? '' : ' · 인터넷 없이 저장'}</small></div></button>
+    return `<button class="home" data-act="home" aria-label="홈(프로젝트 고르기)"><img src="${IMG.icon}" alt=""><div><b>${esc(S.ad.project.codeName)}</b><small>${esc(S.ad.round.label)} · ${esc(et.name)}${MEM() ? '' : ' · 인터넷 없이 저장'}</small></div></button>
       ${S.by ? `<button class="chip-me" data-act="recSheet" style="background:${teamColor(S.by)}" aria-label="기록자 바꾸기">${esc(S.by)}</button>` : ''}
       <button class="gear" data-act="go" data-v="s9" aria-label="설정">${ICO.gear}</button>`;
   }
@@ -702,6 +743,25 @@
       </div>
       ${say('analyst', '현장에서는 사진과 메모만 남기셔도 됩니다. 문항은 돌아가서 같이 붙이겠습니다.')}
       <div class="card rise" style="--i:2"><h2>불러오는 방법</h2><ol class="steps"><li>개인 메일에서 .tspack 첨부를 내려받습니다</li><li>[프로젝트 불러오기]를 누릅니다</li><li>「내 파일 → 다운로드」에서 그 파일을 고릅니다</li></ol><p class="hint">앱을 다시 설치했다면 프로젝트를 불러온 뒤 「설정 → 백업 불러오기」로 TS현장백업 파일을 고르면 기록이 되살아납니다.</p></div>`;
+  }
+
+  /* 홈(r10): 불러온 프로젝트 카드 목록. 맨 위는 지금 연 프로젝트(「이 프로젝트 이어서」 → S1), 나머지는 눌러서 바꾼다 */
+  function vHome() {
+    const L = S.homeList || [];
+    const curId = S.ad && S.db ? S.db.pid : null;
+    if (!curId && !L.length) return vWelcome();
+    const cur = curId ? Object.assign({}, L.find((p) => p.pid === curId) || {}, { pid: curId, codeName: S.ad.project.codeName, round: S.ad.round.label, expiresAt: S.ad.expiresAt, n: live().length, uns: unsentN(), last: S.lastSaveAt }) : null;
+    const others = L.filter((p) => p.pid !== curId);
+    const old = (p) => p.expiresAt && new Date() > new Date(p.expiresAt + 'T23:59:59');
+    const card = (p, i, isCur) => `<button class="pl rise ${isCur ? 'on' : ''}" style="--i:${i}" ${isCur ? `data-act="go" data-v="${S.sc && S.by ? 's1' : 's0'}"` : `data-act="openProj" data-p="${esc(p.pid)}"`}>
+        <span class="ord">${isCur ? '지금 열림 · 눌러서 이어 쓰기' : '눌러서 들어가기'}</span><b>${esc(p.codeName)}</b>
+        <small>${esc(p.round)} · 기록 ${p.n}건 · 안 보낸 ${p.uns}건${old(p) ? ' · 만료됨' : ''}</small><small style="display:block">마지막 기록 ${esc(ago(p.last))}</small></button>`;
+    return `<div class="band blue rise" style="--i:0">기록은 프로젝트마다 따로 저장됩니다. 다른 프로젝트로 바꿔도 기록이 섞이지 않습니다.</div>
+      ${cur ? `<h2 class="rise" style="--i:1;margin:4px 0 8px">이 프로젝트 이어서</h2><div class="pls">${card(cur, 1, true)}</div>` : ''}
+      ${others.length ? `<h2 class="rise" style="--i:2;margin:16px 0 8px">불러온 다른 프로젝트 <small>${others.length}개</small></h2><div class="pls">${others.map((p, i) => card(p, i + 2, false)).join('')}</div>` : ''}
+      <button class="btn wide big rise" style="--i:3;margin-top:16px" data-act="pickPack"><img src="${IMG.import}" alt="" width="26">새 프로젝트 불러오기(.tspack)</button>
+      <p class="hint">메일로 받은 .tspack 파일을 「내 파일 → 다운로드」에서 고릅니다. 이미 불러온 프로젝트의 새 자료를 고르면 기존 기록은 그대로 두고 문항·장소만 바꿉니다.</p>
+      <div style="margin-top:12px">${bigCard(4)}</div>`;
   }
 
   /* S0 첫 실행·기기 점검 */
@@ -1078,7 +1138,7 @@
         <div class="row"><button class="btn ghost grow" data-act="setLock">잠금 번호 정하기</button><button class="btn line grow" data-act="clearLock">잠금 끄기</button></div></div>
       <div class="card rise" style="--i:4"><h2>카메라 권장 설정</h2><ul class="small" style="margin:0;padding-left:18px"><li>사진 12MP(4:3), 고효율 사진(HEIF) 끄기</li><li>동영상 FHD 30fps, 한 번에 30초 이하</li><li>위치 태그 끄기 권장</li><li>얼굴·번호판·사원증이 보이면 기록에서 「개인정보 포함」을 켜 주세요</li></ul></div>
       <div class="card rise" style="--i:5"><h2>프로젝트</h2><p class="small" style="margin:0">${esc(S.ad.project.codeName)} · ${esc(S.ad.round.label)} · 사업장 유형 ${esc(SITE[S.ad.project.siteType] || S.ad.project.siteType)}</p>
-        <div class="row" style="margin-top:10px"><button class="btn ghost grow" data-act="pickPack">프로젝트 불러오기</button>${SINGLE ? '' : '<button class="btn line grow" data-act="switchProj">다른 프로젝트</button>'}</div>
+        <div class="row" style="margin-top:10px"><button class="btn ghost grow" data-act="pickPack">프로젝트 불러오기</button><button class="btn line grow" data-act="switchProj">다른 프로젝트</button></div>
         <p class="hint">같은 프로젝트의 새 자료(자료 번호가 더 큰 파일)를 불러오면 기존 기록은 그대로 두고 문항·장소만 바꿉니다.</p></div>
       <div class="card rise" style="--i:6"><h2>앱 정보</h2><p class="small num" style="margin:0">앱 버전 ${TSF.APP_VERSION} · ${SINGLE ? '파일 하나(A안)' : '설치형(B안)'}<br>자료 번호(dataRev) ${S.ad.dataRev} · 자료 판 v${S.ad.version || 1}<br>문항집 버전 ${esc(S.ad.bank.bankVersion)}<br>만료일 ${esc(S.ad.expiresAt || '-')}${expired() ? ' (만료됨)' : ''}</p></div>`;
   }
@@ -1393,17 +1453,13 @@
 
   /* ── 동작 연결 ── */
   const ACT = {
-    home: () => go('s1'),
+    home: () => goHome(),
+    openProj: async (el) => { await openProject(el.dataset.p); toast(`${S.ad.project.codeName}(${S.ad.round.label})로 바꿨습니다. 기록은 프로젝트마다 따로 있습니다.`, { img: IMG.approve }); },
     bigText: () => { bigText(pref('big') !== '1'); render(); },
     go: (el) => { if (el.dataset.v === 's7') S.built = null; if (el.dataset.v === 's0') runSelfCheck(); go(el.dataset.v); },
     start: () => go('s1'),
     pickPack: () => { $('#inPack').value = ''; $('#inPack').click(); },
-    switchProj: async () => {
-      const list = await TSF.listProjects();
-      const sh = sheet(`<h3>다른 프로젝트</h3>${list.map((p) => `<button class="qc" data-p="${esc(p)}"><div class="q">${esc(p)}</div></button>`).join('')}<button class="btn ghost wide" id="spNew">프로젝트 불러오기</button>`);
-      sh.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => { closeSheet(); openProject(b.dataset.p); }));
-      sh.querySelector('#spNew').onclick = () => { closeSheet(); ACT.pickPack(); };
-    },
+    switchProj: () => goHome(), // r10: 설정 「다른 프로젝트」도 홈(프로젝트 고르기)으로
     testCam: () => { $('#inTest').value = ''; $('#inTest').click(); },
     setBy: (el) => setBy(el.dataset.i),
     addRec: () => addRec(),

@@ -1,6 +1,6 @@
 /* TS 현장 앱 서비스워커(B안, D75): 설치할 때 앱 파일 전부를 저장하고 이후 네트워크 없이 연다.
    고객 자료(*.tspack, 기록)는 캐시하지 않는다(기록은 IndexedDB). 앱을 고치면 VERSION 을 올린다. */
-const VERSION = 'tsf-1.0.0-r9'; // 10/15 D95 기록 보호 강화(저장 상태 줄·메모리 모드 차단·백업 파일) (이전 r8: D93 확인 코드 화면 없앰)
+const VERSION = 'tsf-1.0.0-r10'; // 10/15 홈(프로젝트 고르기)·팩 불러오기 실패 이유 (이전 r9: D95 기록 보호 강화)
 const FILES = [
   './', 'index.html', 'tokens.css', 'app.css', 'theme-a.css', 'manifest.webmanifest',
   'js/util.js', 'js/db.js', 'js/zip.js', 'js/bundle.js', 'js/media.js', 'js/selfcheck.js', 'js/app.js',
